@@ -44,15 +44,10 @@ if (!URL || !APP_ID || !ACCESS_KEY || !RESOURCE_ID || !APP_KEY) {
 // ── Binary protocol helpers (4-byte header + optional + payload size + payload)
 
 const MSG_FULL_CLIENT = 0b0001;
-const MSG_FULL_SERVER = 0b1001;
-const MSG_AUDIO_ONLY_REQ = 0b0010;
-const MSG_AUDIO_ONLY_RESP = 0b1011;
 const MSG_ERROR = 0b1111;
 
-const SER_RAW = 0b0000;
 const SER_JSON = 0b0001;
 
-const FLAG_NONE = 0b0000;
 const FLAG_EVENT = 0b0100;
 
 const EVT_StartConnection = 1;
