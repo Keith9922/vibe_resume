@@ -20,20 +20,18 @@ type VoiceTurn = {
 
 type Props = {
   open: boolean;
-  /** Live conversation state, captured at open and updated through onTurnComplete. */
   initialMessages: InterviewMessage[];
   jd: string | null;
   initialPhase: InterviewPhase;
   initialTurnCount: number;
   onClose: () => void;
-  /** Called once per voice turn so the parent can persist the new state. */
   onTurnComplete: (turn: VoiceTurn) => void;
 };
 
 const PHASE_LABEL: Record<InterviewPhase, string> = {
-  intro: "破冰",
-  "topic-select": "选题",
-  "deep-dive": "深挖",
+  intro: "开场",
+  "topic-select": "聊经历",
+  "deep-dive": "聊细节",
   closing: "收尾",
   done: "完成",
 };
@@ -41,59 +39,72 @@ const PHASE_LABEL: Record<InterviewPhase, string> = {
 /**
  * Full-screen voice conversation overlay.
  *
- * State machine: idle → speaking (greet) → listening → thinking → speaking → listening → ...
+ * State machine:  idle ─▶ speaking (greet) ─▶ listening ─▶ thinking ─▶ speaking ─▶ listening …
  *
- * - On open, we either greet (if no messages yet) or replay the last AI line so
- *   the conversation feels continuous.
- * - STT auto-finalises on silence (1.5s); the orb tap forces an early stop.
- * - While AI is speaking, the orb tap interrupts TTS and re-opens the mic.
+ * Reliability invariants:
+ *  - The orb tap ALWAYS does something visible (no silent no-op).
+ *  - STT.onFinal always fires on stop (even with empty transcript) so the loop
+ *    can never get wedged in the listening state.
+ *  - Empty utterances (no speech detected) gently nudge the user to retry
+ *    instead of silently rebooting the mic forever.
+ *  - A visible "结束" button in the header is the always-available escape hatch.
  */
 export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurnCount, onClose, onTurnComplete }: Props) {
   const [state, setState] = useState<VoiceState>("idle");
   const [userCaption, setUserCaption] = useState("");
   const [aiCaption, setAiCaption] = useState("");
+  const [hint, setHint] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
-  // Live refs so the loop callbacks always see the latest snapshot
+  // Live refs so loop callbacks always see latest snapshot
   const messagesRef = useRef<InterviewMessage[]>(initialMessages);
   const phaseRef = useRef<InterviewPhase>(initialPhase);
   const turnCountRef = useRef<number>(initialTurnCount);
   const stateRef = useRef<VoiceState>("idle");
   const aliveRef = useRef(true);
+  // Number of consecutive empty STT results — bail out of retry loop after a few
+  const emptyStrikesRef = useRef(0);
 
   useEffect(() => { stateRef.current = state; }, [state]);
 
   const tts = useTextToSpeech({ rate: 1.05 });
 
-  // Forward refs to break the dependency cycle between STT callback and the loop.
+  // Forward refs to break the dependency cycle between STT callbacks and the loop
   const startListeningRef = useRef<() => void>(() => {});
   const handleUserUtteranceRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const handleEmptyTranscriptRef = useRef<() => void>(() => {});
 
   const stt = useSpeechToText({
-    silenceMs: 1500,
+    silenceMs: 1200,
     onInterim: (text) => setUserCaption(text),
     onFinal: (text) => {
       if (!aliveRef.current) return;
-      void handleUserUtteranceRef.current(text);
+      const cleaned = text.trim();
+      if (cleaned) {
+        emptyStrikesRef.current = 0;
+        void handleUserUtteranceRef.current(cleaned);
+      } else {
+        handleEmptyTranscriptRef.current();
+      }
     },
     onError: (code) => {
-      if (code === "no-speech" && aliveRef.current && stateRef.current === "listening") {
-        // User didn't say anything — re-arm quietly
-        startListeningRef.current();
-        return;
-      }
       if (code === "not-allowed") {
         setErrorBanner("麦克风权限被拒绝，请在浏览器地址栏左侧允许麦克风。");
         setState("idle");
         return;
       }
+      // For 'no-speech', 'aborted', etc. let the regular onend → onFinal flow
+      // handle the empty transcript path. Don't fight it here.
       console.warn("STT error:", code);
     },
   });
 
+  // ── State transitions ──────────────────────────────────────────────────
+
   const startListening = useCallback(() => {
     if (!aliveRef.current) return;
     setUserCaption("");
+    setHint(null);
     setState("listening");
     if (stt.supported) {
       stt.start();
@@ -103,15 +114,33 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
     }
   }, [stt]);
 
+  const handleEmptyTranscript = useCallback(() => {
+    if (!aliveRef.current) return;
+    emptyStrikesRef.current += 1;
+    setUserCaption("");
+    if (emptyStrikesRef.current >= 3) {
+      // Give up the auto-retry loop — let the user kick it off again
+      setHint("没听清，点中间圆球再试一次。");
+      setState("idle");
+      return;
+    }
+    setHint("没听清，再说一次试试…");
+    // Brief pause, then retry mic
+    setTimeout(() => {
+      if (aliveRef.current && stateRef.current !== "speaking" && stateRef.current !== "thinking") {
+        startListening();
+      }
+    }, 800);
+  }, [startListening]);
+
   const speakAndThen = useCallback(
     (text: string, after: () => void) => {
       setAiCaption(text);
+      setHint(null);
       setState("speaking");
 
-      // Hard safety net: even if both TTS engines silently fail to fire onEnd,
-      // advance to listening after an upper-bound based on text length so the
-      // orb never gets stuck. ~250ms per Chinese char + 4s pad, capped at 60s.
-      const maxMs = Math.min(60000, 4000 + text.length * 250);
+      // Hard safety net so the orb never gets stuck even if both TTS engines fail to fire onEnd
+      const maxMs = Math.min(60_000, 4000 + text.length * 250);
       let advanced = false;
       const advance = () => {
         if (advanced) return;
@@ -121,20 +150,13 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
       const safetyTimer = setTimeout(advance, maxMs);
 
       if (!tts.supported) {
-        // No TTS at all — show caption for a reasonable read time then advance
         const readMs = Math.min(8000, 1000 + text.length * 100);
-        setTimeout(() => {
-          clearTimeout(safetyTimer);
-          advance();
-        }, readMs);
+        setTimeout(() => { clearTimeout(safetyTimer); advance(); }, readMs);
         return;
       }
 
       tts.speak(text, {
-        onEnd: () => {
-          clearTimeout(safetyTimer);
-          advance();
-        },
+        onEnd: () => { clearTimeout(safetyTimer); advance(); },
       });
     },
     [tts],
@@ -142,15 +164,13 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
 
   const handleUserUtterance = useCallback(
     async (text: string) => {
-      if (!text.trim() || !aliveRef.current) return;
+      if (!text || !aliveRef.current) return;
       setState("thinking");
+      setHint(null);
       setUserCaption(text);
 
       const userMsg: InterviewMessage = {
-        id: generateId("m"),
-        role: "user",
-        content: text,
-        createdAt: new Date().toISOString(),
+        id: generateId("m"), role: "user", content: text, createdAt: new Date().toISOString(),
       };
       const newHistory = [...messagesRef.current, userMsg];
       const newTurnCount = turnCountRef.current + 1;
@@ -169,26 +189,27 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
             turnCount: newTurnCount,
           },
           {
-            onChunk: (delta) => {
-              aiText += delta;
-              setAiCaption(aiText);
-            },
+            onChunk: (delta) => { aiText += delta; setAiCaption(aiText); },
             onMeta: (info) => { nextPhase = info.phase; },
             onError: (msg) => console.error("Stream error:", msg),
           },
         );
       } catch (err) {
         console.error(err);
-        const fallback = "网络好像有点问题。要不再说一次？";
-        const aiMsg: InterviewMessage = { id: generateId("m"), role: "assistant", content: fallback, createdAt: new Date().toISOString() };
+        const fallback = "网络好像有点问题，能再说一次吗？";
+        const aiMsg: InterviewMessage = {
+          id: generateId("m"), role: "assistant", content: fallback, createdAt: new Date().toISOString(),
+        };
         messagesRef.current = [...messagesRef.current, aiMsg];
-        speakAndThen(fallback, startListening);
         onTurnComplete({ userMessage: userMsg, aiMessage: aiMsg, newPhase: phaseRef.current, newTurnCount });
+        speakAndThen(fallback, startListening);
         return;
       }
 
       const finalText = aiText.trim() || "嗯，我听到了。能再多说一点吗？";
-      const aiMsg: InterviewMessage = { id: generateId("m"), role: "assistant", content: finalText, createdAt: new Date().toISOString() };
+      const aiMsg: InterviewMessage = {
+        id: generateId("m"), role: "assistant", content: finalText, createdAt: new Date().toISOString(),
+      };
       messagesRef.current = [...messagesRef.current, aiMsg];
       phaseRef.current = nextPhase;
       onTurnComplete({ userMessage: userMsg, aiMessage: aiMsg, newPhase: nextPhase, newTurnCount });
@@ -199,24 +220,27 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
 
   startListeningRef.current = startListening;
   handleUserUtteranceRef.current = handleUserUtterance;
+  handleEmptyTranscriptRef.current = handleEmptyTranscript;
 
-  // Open / close lifecycle
+  // ── Open / close lifecycle ─────────────────────────────────────────────
+
   useEffect(() => {
     if (!open) return;
     aliveRef.current = true;
+    emptyStrikesRef.current = 0;
     setErrorBanner(null);
     setUserCaption("");
+    setHint(null);
     messagesRef.current = initialMessages;
     phaseRef.current = initialPhase;
     turnCountRef.current = initialTurnCount;
 
-    // Decide opening line: replay last AI message if conversation is in progress,
-    // otherwise let the streaming endpoint generate a fresh greeting.
     const lastAi = [...initialMessages].reverse().find((m) => m.role === "assistant");
     if (lastAi) {
+      // Conversation in progress — replay last AI line so it feels continuous
       speakAndThen(lastAi.content, startListening);
     } else {
-      // Fire a turn-0 stream call to generate an opening question
+      // Fresh start — let the streaming endpoint generate an opening
       setState("thinking");
       let opening = "";
       let nextPhase: InterviewPhase = "intro";
@@ -229,8 +253,10 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
       )
         .then(() => {
           if (!aliveRef.current) return;
-          const text = opening.trim() || "嗨，先简单介绍一下你自己吧——现在在校还是已经工作了？";
-          const aiMsg: InterviewMessage = { id: generateId("m"), role: "assistant", content: text, createdAt: new Date().toISOString() };
+          const text = opening.trim() || "嗨，先随便聊聊吧——你最近在忙啥？";
+          const aiMsg: InterviewMessage = {
+            id: generateId("m"), role: "assistant", content: text, createdAt: new Date().toISOString(),
+          };
           messagesRef.current = [...messagesRef.current, aiMsg];
           phaseRef.current = nextPhase;
           onTurnComplete({ userMessage: null, aiMessage: aiMsg, newPhase: nextPhase, newTurnCount: 0 });
@@ -250,27 +276,55 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
       setState("idle");
       setAiCaption("");
       setUserCaption("");
+      setHint(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Tap centre orb to interrupt / advance
+  // ── User actions ───────────────────────────────────────────────────────
+
+  /** Tap the central orb. Always does something visible — never a silent no-op. */
   const handleOrbTap = useCallback(() => {
     if (state === "speaking") {
+      // Interrupt AI, jump straight to listening
       tts.cancel();
       startListening();
-    } else if (state === "listening") {
-      stt.stop();
-    } else if (state === "idle") {
-      startListening();
+      return;
     }
-    // 'thinking' → no-op
+    if (state === "listening") {
+      // If we already have something in interim, ship it. Otherwise treat as
+      // "user gave up this turn" — go back to idle, wait for next tap.
+      const interim = stt.interim.trim();
+      if (interim) {
+        // Force-finalise via stop(); STT will fire onFinal with the interim text
+        stt.stop();
+      } else {
+        stt.cancel();
+        emptyStrikesRef.current = 0;
+        setState("idle");
+        setHint("点击中间圆球继续说话。");
+      }
+      return;
+    }
+    if (state === "idle") {
+      startListening();
+      return;
+    }
+    // 'thinking' — already busy; tell the user we're working
+    setHint("教练在想下一句…稍等。");
   }, [state, tts, stt, startListening]);
+
+  /** Big "结束" button — always works. Cancels STT, TTS, exits modal. */
+  const handleEnd = useCallback(() => {
+    tts.cancel();
+    stt.cancel();
+    onClose();
+  }, [tts, stt, onClose]);
 
   if (!open) return null;
 
   const stateLabel: Record<VoiceState, string> = {
-    idle: "点击中央开始",
+    idle: "点中间开始",
     listening: "在听你说…",
     thinking: "在想…",
     speaking: "在说…",
@@ -283,11 +337,11 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
           <span className="voice-mode-dot" aria-hidden />
           <span>语音对话 · {PHASE_LABEL[phaseRef.current]}</span>
         </div>
-        <button className="voice-mode-close" type="button" onClick={onClose} aria-label="退出语音模式">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
+        <button className="voice-mode-end" type="button" onClick={handleEnd} aria-label="结束语音通话">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
           </svg>
+          <span>结束</span>
         </button>
       </div>
 
@@ -324,11 +378,13 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
 
       {errorBanner && <div className="voice-error" role="alert">{errorBanner}</div>}
 
-      <div className="voice-mode-hint">
-        {state === "speaking" && "点击中央可打断"}
-        {state === "listening" && "讲完会自动收尾，也可以点击中央立即结束"}
-        {state === "thinking" && "教练正在想下一个问题…"}
-        {state === "idle" && "点击右上角 X 退出"}
+      <div className="voice-mode-hint" aria-live="polite">
+        {hint || (
+          state === "speaking" ? "点中间可打断"
+          : state === "listening" ? "讲完会自动收尾，也可以点中间立即结束"
+          : state === "thinking" ? "教练正在想下一句…"
+          : "点击右上角结束通话"
+        )}
       </div>
     </div>
   );

@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Web Speech API minimal types.
- *
- * The DOM lib types for SpeechRecognition are incomplete or missing in many TS
- * setups, so we declare just what we need. Casts are limited to the factory
- * lookup and event-shape narrowing.
+ * Web Speech API minimal types. The DOM lib types are incomplete or missing
+ * in many TS setups, so we declare just what we need.
  */
 type SpeechRec = {
   lang: string;
@@ -31,11 +28,12 @@ type SpeechRecEvent = {
 type SttOptions = {
   /** Called as the user is talking with the running transcript. */
   onInterim?: (text: string) => void;
-  /** Called once when the user has stopped (silence timer or explicit stop). */
+  /** Always fired when the recognizer stops (silence, explicit stop, max-time).
+   *  The text may be empty — caller decides how to react. */
   onFinal?: (text: string) => void;
-  /** Called on any error (no-speech, not-allowed, network). */
+  /** Called on any error code from the Web Speech API. */
   onError?: (code: string) => void;
-  /** Silence threshold in ms before auto-finalising. Default 1500ms. */
+  /** Silence threshold in ms before auto-finalising. Default 1200ms. */
   silenceMs?: number;
   /** Max single utterance length in ms before forced cut. Default 30s. */
   maxUtteranceMs?: number;
@@ -47,12 +45,13 @@ type SttApi = {
   /** Latest interim transcript (clears on stop). */
   interim: string;
   start: () => void;
+  /** Politely stop. onFinal will fire (with whatever was captured, even ""). */
   stop: () => void;
-  /** Hard-abort without firing onFinal. */
+  /** Hard-abort. onFinal does NOT fire. */
   cancel: () => void;
 };
 
-const DEFAULT_SILENCE_MS = 1500;
+const DEFAULT_SILENCE_MS = 1200;
 const DEFAULT_MAX_MS = 30000;
 
 export function useSpeechToText(options: SttOptions = {}): SttApi {
@@ -69,7 +68,7 @@ export function useSpeechToText(options: SttOptions = {}): SttApi {
   const interimTextRef = useRef("");
   const aborted = useRef(false);
 
-  // Latest-callback refs so we don't have to re-create the recognizer.
+  // Keep callbacks in a ref so we don't re-create the recognizer on every render
   const cbRef = useRef({ onInterim, onFinal, onError });
   useEffect(() => {
     cbRef.current = { onInterim, onFinal, onError };
@@ -92,13 +91,18 @@ export function useSpeechToText(options: SttOptions = {}): SttApi {
     }
   }, []);
 
+  /**
+   * Always fires onFinal when stop completes, including with empty text.
+   * Caller decides whether to ignore empty (e.g. retry mic) or treat as
+   * "user gave up" (return to idle).
+   */
   const finalise = useCallback(() => {
     const text = (finalTextRef.current + interimTextRef.current).trim();
     finalTextRef.current = "";
     interimTextRef.current = "";
     setInterim("");
     clearTimers();
-    if (text && !aborted.current) cbRef.current.onFinal?.(text);
+    if (!aborted.current) cbRef.current.onFinal?.(text);
   }, [clearTimers]);
 
   const stop = useCallback(() => {
@@ -106,9 +110,10 @@ export function useSpeechToText(options: SttOptions = {}): SttApi {
     try {
       recRef.current?.stop();
     } catch {
-      // already stopped
+      // Already stopped — but caller still expects an onFinal. Synthesize one.
+      finalise();
     }
-  }, []);
+  }, [finalise]);
 
   const cancel = useCallback(() => {
     aborted.current = true;
@@ -121,12 +126,12 @@ export function useSpeechToText(options: SttOptions = {}): SttApi {
     } catch {
       // ignore
     }
+    setIsListening(false);
   }, [clearTimers]);
 
   const armSilenceTimer = useCallback(() => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     silenceTimerRef.current = setTimeout(() => {
-      // Silence threshold reached → stop the recogniser; finalise() runs onend.
       try {
         recRef.current?.stop();
       } catch {
@@ -157,11 +162,7 @@ export function useSpeechToText(options: SttOptions = {}): SttApi {
       armSilenceTimer();
       if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
       maxTimerRef.current = setTimeout(() => {
-        try {
-          rec.stop();
-        } catch {
-          // ignore
-        }
+        try { rec.stop(); } catch { /* ignore */ }
       }, maxUtteranceMs);
     };
 
@@ -203,15 +204,10 @@ export function useSpeechToText(options: SttOptions = {}): SttApi {
     }
   }, [supported, isListening, armSilenceTimer, finalise, maxUtteranceMs]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       clearTimers();
-      try {
-        recRef.current?.abort();
-      } catch {
-        // ignore
-      }
+      try { recRef.current?.abort(); } catch { /* ignore */ }
     };
   }, [clearTimers]);
 
