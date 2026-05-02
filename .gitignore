@@ -31,3 +31,6 @@ next-env.d.ts
 
 # claude code worktree metadata
 .claude
+
+# any nested node_modules (e.g. server/*/node_modules)
+**/node_modules

@@ -1,0 +1,16 @@
+[Unit]
+Description=Stori voice relay (browser ↔ 火山豆包端到端实时语音)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/stori-voice-relay
+EnvironmentFile=/root/stori-voice-relay/.env
+ExecStart=/usr/bin/node relay.mjs
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/stori-voice-relay.log
+StandardError=append:/var/log/stori-voice-relay.log
+
+[Install]
+WantedBy=multi-user.target
