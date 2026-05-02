@@ -1,36 +1,29 @@
+import { synthesizeWithEdge } from "@/lib/tts-edge";
+
 /**
- * MiniMax TTS proxy.
+ * TTS proxy with provider chain:
+ *   1. Edge TTS — free Microsoft Read Aloud, default. Good zh-CN quality.
+ *   2. MiniMax TTS — only if MINIMAX_TTS_MODEL is set AND Edge fails.
+ *   3. 503 — client falls back to browser SpeechSynthesis.
  *
- * POST /api/tts { text: string, voiceId?: string }
- *  → 200 audio/mpeg binary on success
- *  → 503 application/json { reason } when MiniMax TTS is unavailable
+ * POST /api/tts { text: string, voice?: string }
+ *  → 200 audio/mpeg (mp3 binary)
+ *  → 503 application/json { reason, message } on all-providers-failed
  *
- * Server-side proxy keeps the API key off the client. We decode MiniMax's hex
- * audio payload back to binary and stream it as a regular mp3 the browser can
- * play with HTMLAudioElement.
- *
- * If MINIMAX_TTS_MODEL is unset we 503 immediately so the client falls back
- * to browser SpeechSynthesis without even round-tripping.
+ * Why this order: Edge is free, fast, and the zh-CN voices (especially
+ * Xiaoxiao / Yunxi) are widely considered the best free TTS available.
+ * MiniMax stays in the chain so the user can switch providers by env
+ * without code changes once they upgrade their plan.
  */
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
-type MiniMaxTtsResponse = {
-  data?: { audio?: string; status?: number };
-  base_resp?: { status_code?: number; status_msg?: string };
-  extra_info?: { audio_format?: string; audio_size?: number };
-};
+type ProviderResult =
+  | { ok: true; audio: Buffer; provider: "edge" | "minimax" }
+  | { ok: false; reason: string; message: string };
 
 export async function POST(request: Request) {
-  const apiKey = process.env.MINIMAX_API_KEY?.trim();
-  const baseUrl = (process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1").replace(/\/$/, "");
-  const ttsModel = process.env.MINIMAX_TTS_MODEL?.trim();
-  const defaultVoiceId = process.env.MINIMAX_TTS_VOICE_ID?.trim() || "female-tianmei";
-
-  if (!apiKey || !ttsModel) {
-    return jsonError(503, "tts-not-configured", "MiniMax TTS not configured (missing MINIMAX_API_KEY or MINIMAX_TTS_MODEL)");
-  }
-
-  let body: { text?: string; voiceId?: string };
+  let body: { text?: string; voice?: string };
   try {
     body = await request.json();
   } catch {
@@ -41,7 +34,51 @@ export async function POST(request: Request) {
   if (!text) return jsonError(400, "empty-text", "text 不能为空");
   if (text.length > 5000) return jsonError(400, "text-too-long", "text 不能超过 5000 字");
 
-  const voiceId = body.voiceId?.trim() || defaultVoiceId;
+  // Tier 1 — Edge TTS
+  const edgeResult = await tryEdge(text, body.voice);
+  if (edgeResult.ok) return audioResponse(edgeResult.audio, "edge");
+
+  // Tier 2 — MiniMax (only if explicitly configured)
+  const minimaxResult = await tryMiniMax(text, body.voice);
+  if (minimaxResult.ok) return audioResponse(minimaxResult.audio, "minimax");
+
+  // All failed — return the more informative error
+  console.warn("All TTS providers failed:", { edge: edgeResult, minimax: minimaxResult });
+  return jsonError(503, edgeResult.reason, edgeResult.message);
+}
+
+// ── Tier 1 ──────────────────────────────────────────────────────────────
+
+async function tryEdge(text: string, voice?: string): Promise<ProviderResult> {
+  try {
+    const audio = await synthesizeWithEdge(text, { voice });
+    if (!audio || audio.length === 0) {
+      return { ok: false, reason: "edge-empty", message: "Edge TTS 返回空音频" };
+    }
+    return { ok: true, audio, provider: "edge" };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "未知错误";
+    console.warn("Edge TTS failed:", message);
+    return { ok: false, reason: "edge-error", message: `Edge TTS: ${message}` };
+  }
+}
+
+// ── Tier 2 ──────────────────────────────────────────────────────────────
+
+type MiniMaxTtsResponse = {
+  data?: { audio?: string };
+  base_resp?: { status_code?: number; status_msg?: string };
+};
+
+async function tryMiniMax(text: string, voiceOverride?: string): Promise<ProviderResult> {
+  const apiKey = process.env.MINIMAX_API_KEY?.trim();
+  const baseUrl = (process.env.MINIMAX_BASE_URL || "https://api.minimaxi.com/v1").replace(/\/$/, "");
+  const ttsModel = process.env.MINIMAX_TTS_MODEL?.trim();
+  const voiceId = voiceOverride || process.env.MINIMAX_TTS_VOICE_ID?.trim() || "female-tianmei";
+
+  if (!apiKey || !ttsModel) {
+    return { ok: false, reason: "minimax-not-configured", message: "MiniMax TTS 未配置" };
+  }
 
   let response: Response;
   try {
@@ -58,43 +95,42 @@ export async function POST(request: Request) {
       }),
     });
   } catch (err) {
-    console.error("MiniMax TTS network error:", err);
-    return jsonError(503, "network", "MiniMax TTS 网络错误");
+    return { ok: false, reason: "minimax-network", message: err instanceof Error ? err.message : "网络错误" };
   }
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    console.error("MiniMax TTS HTTP error:", response.status, redact(detail).slice(0, 300));
-    return jsonError(503, "http-error", `MiniMax TTS HTTP ${response.status}`);
+    return { ok: false, reason: "minimax-http", message: `HTTP ${response.status}` };
   }
 
   let payload: MiniMaxTtsResponse;
   try {
     payload = (await response.json()) as MiniMaxTtsResponse;
-  } catch (err) {
-    console.error("MiniMax TTS parse error:", err);
-    return jsonError(503, "parse", "MiniMax TTS 响应不是 JSON");
+  } catch {
+    return { ok: false, reason: "minimax-parse", message: "响应不是 JSON" };
   }
 
   const status = payload.base_resp?.status_code;
   if (status !== 0) {
-    // 2061 = plan does not support model; user has to upgrade. Surface explicit reason.
-    const reason = status === 2061 ? "plan-not-supported" : "api-error";
-    console.warn(`MiniMax TTS denied: ${status} ${payload.base_resp?.status_msg}`);
-    return jsonError(503, reason, payload.base_resp?.status_msg || "TTS 调用被拒");
+    const reason = status === 2061 ? "minimax-plan-not-supported" : "minimax-api-error";
+    return { ok: false, reason, message: payload.base_resp?.status_msg || "TTS 调用被拒" };
   }
 
   const hex = payload.data?.audio;
-  if (!hex) return jsonError(503, "empty-audio", "MiniMax TTS 返回空音频");
+  if (!hex) return { ok: false, reason: "minimax-empty", message: "MiniMax 返回空音频" };
 
-  const audio = Buffer.from(hex, "hex");
+  return { ok: true, audio: Buffer.from(hex, "hex"), provider: "minimax" };
+}
 
+// ── Helpers ────────────────────────────────────────────────────────────
+
+function audioResponse(audio: Buffer, provider: string): Response {
   return new Response(new Uint8Array(audio), {
     status: 200,
     headers: {
       "Content-Type": "audio/mpeg",
       "Content-Length": String(audio.length),
       "Cache-Control": "no-store",
+      "X-TTS-Provider": provider,
     },
   });
 }
@@ -104,8 +140,4 @@ function jsonError(status: number, reason: string, message: string): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-function redact(value: string): string {
-  return value.replace(/Bearer\s+[A-Za-z0-9._-]+/g, "Bearer ***").replace(/sk-[A-Za-z0-9._-]+/g, "sk-***");
 }
