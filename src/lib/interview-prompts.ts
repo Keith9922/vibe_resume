@@ -118,6 +118,26 @@ function phaseInstructions(phase: InterviewPhase): string {
   }
 }
 
+// ─── Voice-mode wrapper ──────────────────────────────────────────────────────
+//
+// Voice mode replies get spoken aloud, so the existing 80-100 char target is
+// still too long for a comfortable TTS turn. This addendum tightens the
+// constraints without rewriting the rest of the prompt.
+
+export function buildVoiceInterviewSystemPrompt(jd: string | null, phase: InterviewPhase): string {
+  const base = buildInterviewSystemPrompt(jd, phase);
+  return `${base}
+
+## 语音模式额外约束（最高优先级）
+你的回复会被 TTS 朗读出来，必须满足：
+- **极短**：1 句话最好，最多 2 句，朗读不超过 8 秒
+- 纯口语，**绝对不能**有列表、标题、括号说明、emoji、markdown、星号
+- 标点只用：逗号、句号、问号
+- 自然像朋友打电话，可以用"嗯""那当时""然后呢"这类口语词
+- **结尾必须是问句**，让用户能接着说
+- 不要说"接下来我会问你""我帮你记下来了"这种元信息`;
+}
+
 // ─── Synthesis prompt ─────────────────────────────────────────────────────────
 
 export function buildSynthesisPrompt(jd: string | null): string {

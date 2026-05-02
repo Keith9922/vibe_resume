@@ -68,6 +68,116 @@ export async function runMiniMaxInterview(
   }
 }
 
+// ─── Streaming conversational ───────────────────────────────────────────────
+//
+// Same as runMiniMaxInterview but yields text deltas as they arrive. Used by
+// the voice-mode endpoint to start TTS as soon as the model commits to its
+// first sentence. The MiniMax API is OpenAI-compatible, so `stream: true`
+// returns SSE chunks of shape `data: {choices: [{delta: {content: "..."}}]}`.
+//
+// Reasoning models (M2.7) emit <think> blocks. We strip them on the fly so the
+// caller never sees the planning content.
+
+export async function* streamMiniMaxInterview(
+  systemPrompt: string,
+  history: { role: "user" | "assistant"; content: string }[],
+  options: { temperature?: number; maxTokens?: number } = {},
+): AsyncGenerator<string> {
+  const { apiKey, baseUrl, model } = getConfig();
+  if (!apiKey) return;
+
+  const messages: MiniMaxMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: options.temperature ?? 0.7,
+        max_tokens: options.maxTokens ?? 220,
+        stream: true,
+      }),
+    });
+  } catch (err) {
+    console.error("MiniMax stream network error:", err);
+    return;
+  }
+
+  if (!response.ok || !response.body) {
+    const detail = await response.text().catch(() => "");
+    console.error("MiniMax stream failed:", response.status, redactSecrets(detail));
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  // Track whether we're currently inside a <think>...</think> reasoning block.
+  // Tokens may split tags arbitrarily, so we hold partials until we see a full tag.
+  let insideThink = false;
+  let leakedBuffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let nlIdx;
+    while ((nlIdx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nlIdx).trim();
+      buffer = buffer.slice(nlIdx + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (payload === "[DONE]") return;
+
+      let delta = "";
+      try {
+        const parsed = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
+        delta = parsed.choices?.[0]?.delta?.content ?? "";
+      } catch {
+        continue;
+      }
+      if (!delta) continue;
+
+      // Filter out <think> blocks token-by-token. Accumulate then emit only the
+      // safely-outside-tag portion. Hold up to 7 chars (length of "<think>") at
+      // the tail to avoid splitting a tag across emissions.
+      leakedBuffer += delta;
+      while (true) {
+        if (insideThink) {
+          const close = leakedBuffer.indexOf("</think>");
+          if (close === -1) {
+            leakedBuffer = "";
+            break;
+          }
+          leakedBuffer = leakedBuffer.slice(close + "</think>".length);
+          insideThink = false;
+        } else {
+          const open = leakedBuffer.indexOf("<think>");
+          if (open === -1) {
+            const safeEnd = Math.max(0, leakedBuffer.length - 7);
+            const safe = leakedBuffer.slice(0, safeEnd);
+            leakedBuffer = leakedBuffer.slice(safeEnd);
+            if (safe) yield safe;
+            break;
+          }
+          const safe = leakedBuffer.slice(0, open);
+          if (safe) yield safe;
+          leakedBuffer = leakedBuffer.slice(open + "<think>".length);
+          insideThink = true;
+        }
+      }
+    }
+  }
+  if (!insideThink && leakedBuffer) yield leakedBuffer;
+}
+
 // ─── JSON tasks (returns parsed object/array) ────────────────────────────────
 
 export async function runMiniMaxJsonTask<T>(

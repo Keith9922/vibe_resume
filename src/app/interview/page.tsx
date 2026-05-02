@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { StarSidebar } from "@/components/StarSidebar";
 import { VoiceInput } from "@/components/VoiceInput";
+import { VoiceMode } from "@/components/VoiceMode";
 import type { InterviewApiResponse, InterviewMessage, InterviewPhase } from "@/lib/types";
 import { loadState, patchState } from "@/lib/storage";
 import { generateId } from "@/lib/ids";
@@ -30,6 +31,7 @@ export default function InterviewPage() {
   const [isPending, startTransition] = useTransition();
   const [synthesizing, setSynthesizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Hydrate from localStorage and ask for the very first question if needed.
@@ -165,6 +167,22 @@ export default function InterviewPage() {
   const canSynthesize = turnCount >= 4 && messages.filter((m) => m.role === "user").length >= 3;
   const interviewDone = phase === "done" || phase === "closing";
 
+  // Voice mode merges turns back into the same conversation state.
+  // Uses functional setState so rapid turns don't trample each other.
+  const handleVoiceTurn = useCallback(
+    (turn: { userMessage: InterviewMessage | null; aiMessage: InterviewMessage; newPhase: InterviewPhase; newTurnCount: number }) => {
+      setMessages((prev) => {
+        const additions = turn.userMessage ? [turn.userMessage, turn.aiMessage] : [turn.aiMessage];
+        const final = [...prev, ...additions];
+        patchState({ messages: final, phase: turn.newPhase, turnCount: turn.newTurnCount });
+        return final;
+      });
+      setPhase(turn.newPhase);
+      setTurnCount(turn.newTurnCount);
+    },
+    [],
+  );
+
   return (
     <div className="app">
       <nav className="app-nav">
@@ -176,7 +194,18 @@ export default function InterviewPage() {
           <div className="progress-bar"><div className="progress-fill" style={{ width: `${progressPct}%` }} /></div>
           <span className="nav-step-label">{PHASE_LABEL[phase]}</span>
         </div>
-        <div style={{ width: 80 }} />
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm voice-launch-btn"
+          onClick={() => setVoiceOpen(true)}
+          title="改用语音对话"
+          aria-label="打开语音对话模式"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+          </svg>
+          <span>语音聊</span>
+        </button>
       </nav>
 
       <div className="interview-body">
@@ -257,6 +286,16 @@ export default function InterviewPage() {
 
         <StarSidebar phase={phase} turnCount={turnCount} messages={messages} />
       </div>
+
+      <VoiceMode
+        open={voiceOpen}
+        initialMessages={messages}
+        jd={jd}
+        initialPhase={phase}
+        initialTurnCount={turnCount}
+        onClose={() => setVoiceOpen(false)}
+        onTurnComplete={handleVoiceTurn}
+      />
     </div>
   );
 }
