@@ -378,8 +378,9 @@ a { color: inherit; text-decoration: none; }
   width: 100%;
   aspect-ratio: 4 / 5;
   background:
-    linear-gradient(135deg, rgba(212,145,110,0.25) 0%, rgba(26,26,26,1) 70%),
-    radial-gradient(circle at 30% 35%, rgba(240,213,194,0.4), transparent 50%),
+    /* warm tint laid over the photo to glue it to the cream palette */
+    linear-gradient(135deg, rgba(212,145,110,0.18) 0%, rgba(26,26,26,0.12) 70%),
+    url("/hero-writing.jpg") center/cover no-repeat,
     var(--text-1);
   position: relative;
   overflow: hidden;
@@ -388,7 +389,11 @@ a { color: inherit; text-decoration: none; }
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 70% 80%, rgba(0,0,0,0.6) 0%, transparent 60%);
+  /* subtle vignette to deepen lower-right and lift the warm highlight upper-left */
+  background:
+    radial-gradient(ellipse at 70% 85%, rgba(0,0,0,0.45) 0%, transparent 55%),
+    radial-gradient(ellipse at 25% 20%, rgba(240,213,194,0.18), transparent 45%);
+  pointer-events: none;
 }
 .meta-strip {
   background: var(--surface-inverse);
