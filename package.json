@@ -1,6 +1,6 @@
 {
-  "name": "stori",
-  "version": "0.2.0",
+  "name": "vc-tycoon",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,12 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "jspdf": "^3.0.4",
-    "lucide-react": "^0.468.0",
     "next": "^15.1.8",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zod": "^3.24.1"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

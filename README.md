@@ -1,93 +1,94 @@
-# Stori — AI 简历教练
+# VC Tycoon · 创投大富翁
 
-**讲好你的故事，拿到心仪的 Offer**
+一个用大富翁玩法重温真实创投史的网页游戏。投或不投？揭晓的是 Insta360、字节跳动、Theranos、WeWork、FTX 这些真实的故事。
 
-Stori 是一款对话式 AI 简历教练。它不是传统的表单式简历编辑器，而是像面试官一样追问你的真实经历，把口语故事沉淀为可验证的故事卡，再按 JD 定制生成简历。
+## 游戏玩法
 
----
-
-## 核心功能
-
-- **AI 对话采集**：用自然语言讲经历，AI 追问背景、行动、结果和数据
-- **故事卡确认**：每段经历结构化为可确认的事实卡，绝不编造
-- **JD 智能匹配**：粘贴岗位 JD，自动分析覆盖/弱覆盖/缺口并针对性追问
-- **简历一键生成**：基于已确认素材生成简历，打印或导出 PDF
-- **语音输入**：支持 Chrome/Edge 浏览器原生语音识别（中文）
-- **移动端支持**：底部导航栏 + 全屏面板，在手机上也能完整使用
-
----
-
-## 快速开始
-
-```bash
-# 1. 安装依赖
-npm install
-
-# 2. 配置环境变量（可选）
-cp .env.example .env.local
-# 填写 MINIMAX_API_KEY 启用 AI 能力
-# 不填时使用本地规则引擎，基础功能仍可用
-
-# 3. 启动开发服务器
-npm run dev
-# 访问 http://localhost:3000
-```
-
----
-
-## 环境变量
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `MINIMAX_API_KEY` | MiniMax API Key，填写后启用 AI | 空（使用本地引擎）|
-| `MINIMAX_BASE_URL` | MiniMax API Base URL | `https://api.minimax.io/v1` |
-| `MINIMAX_MODEL` | 使用的模型 | `MiniMax-M1` |
-
----
+- **棋盘**：8×8 环形棋盘，28 个格子（4 个角 + 24 个项目），每局随机生成
+- **节奏**：你 vs AI 轮流掷骰子，落到项目格选择 INVEST 或 PASS
+- **揭晓**：决策后立刻揭晓真实公司和真实结局，让你看到"如果投了/没投会怎样"
+- **角落格**：START（路过 +$10M）/ LP MEETING（业绩差被撤资）/ DEMO DAY（+$20M）/ BLACK SWAN（黑天鹅）
+- **胜负**：先到 $500M 获胜；现金归零则破产
 
 ## 技术栈
 
-- **框架**：Next.js 15 (App Router)
-- **语言**：TypeScript
-- **样式**：原生 CSS（无 Tailwind，保持零运行时依赖）
-- **AI**：MiniMax API（OpenAI 兼容），本地规则引擎降级
-- **语音**：Web Speech API（浏览器原生）+ MiniMax ASR（可选）
-- **PDF**：浏览器打印（`window.print()`）
-
----
+- **框架**：Next.js 15 App Router · React 19 · TypeScript
+- **样式**：原生 CSS（零运行时依赖）
+- **状态管理**：`useReducer`，纯函数 reducer + 副作用隔离在组件层
+- **AI 对手**：在 [src/lib/vc-tycoon/ai.ts](src/lib/vc-tycoon/ai.ts) — 基于公开信息（不偷看 outcome）做加权概率决策
 
 ## 项目结构
 
 ```
 src/
 ├── app/
-│   ├── api/
-│   │   ├── coach/route.ts       # AI 教练主接口
-│   │   └── transcribe/route.ts  # 语音转录接口
-│   ├── globals.css              # 完整设计系统
 │   ├── layout.tsx
-│   └── page.tsx
-├── components/
-│   └── resume-workspace.tsx     # 主工作台组件
-└── lib/
-    ├── types.ts                 # 核心类型定义
-    ├── minimax.ts               # MiniMax API 封装
-    ├── resume-engine.ts         # 本地规则引擎
-    ├── coach-schemas.ts         # Zod 验证
-    ├── storage.ts               # localStorage 持久化
-    ├── initial-state.ts
-    └── ids.ts
+│   ├── page.tsx                 # 入口
+│   └── globals.css              # 完整设计系统
+├── components/vc-tycoon/
+│   ├── VCTycoon.tsx             # 主客户端组件，编排副作用
+│   ├── Header.tsx               # HUD：双方资金/组合/回合
+│   ├── Board.tsx                # 环形棋盘 + 中心骰子
+│   ├── Sidebar.tsx              # 决策面板 + 投资组合 + 日志
+│   └── Modals.tsx               # 结果揭晓 + 游戏结束
+└── lib/vc-tycoon/
+    ├── types.ts                 # 类型定义
+    ├── data.ts                  # 36 个真实案例 + 4 个角落格
+    ├── board.ts                 # 棋盘构建（每局随机抽取）
+    ├── game.ts                  # 纯函数 reducer
+    └── ai.ts                    # AI 决策逻辑
 ```
 
+## 本地运行
+
+```bash
+npm install
+npm run dev
+# 打开 http://localhost:3000
+```
+
+```bash
+npm run typecheck   # TypeScript 检查
+npm run lint        # ESLint
+npm run build       # 生产构建
+```
+
+## 部署到 Vercel
+
+最简单的两种方式（任选其一）：
+
+### 方式 1：通过 GitHub 自动部署（推荐）
+
+1. 把代码 push 到 GitHub 仓库
+2. 登录 [vercel.com](https://vercel.com) → New Project
+3. 选择仓库 → Framework Preset 自动识别为 Next.js → Deploy
+
+### 方式 2：通过 Vercel CLI
+
+```bash
+npm i -g vercel
+vercel              # 首次部署，按提示绑定项目
+vercel --prod       # 部署到生产域名
+```
+
+无需任何环境变量，开箱即用。
+
+## 设计原则
+
+1. **真实优先**：每个项目格背后都是真实公司，胜负倍数参考真实退出/估值
+2. **延迟揭晓**：决策时只能看到"假名 + 一句话描述 + 轮次 + 金额"，模拟 VC 真实信息不对称
+3. **AI 公平**：AI 看到的信息和你完全一样，靠概率策略而非作弊
+4. **教育意义**：玩完一局，你会记住为什么 ofo 翻车、为什么 Insta360 是宝藏
+
+## V2 路线图
+
+- [ ] 多轮加注（种子轮投了能不能跟投 A/B 轮）
+- [ ] 尽调机制（花钱换信息卡）
+- [ ] 回报随时间揭晓而不是即时
+- [ ] 多人对战（房间码）
+- [ ] 更复杂的事件卡（市场周期、监管收紧）
+- [ ] 案例难度分级 / 时代主题局（2000 互联网泡沫局、2021 加密局）
+
 ---
 
-## 产品设计原则
-
-1. **真实优先**：AI 不编造经历、数据、公司、学历
-2. **追问驱动**：宁可追问，不自行补全
-3. **确认机制**：所有故事卡需用户确认才写入简历
-4. **降级可用**：无 API Key 时本地引擎保证核心链路可走通
-
----
-
-*Stori — 你的经历值得被好好讲出来。*
+*VC Tycoon · 投或不投，这是一个问题。*

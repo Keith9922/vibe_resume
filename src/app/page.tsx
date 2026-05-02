@@ -1,5 +1,5 @@
-import { ResumeWorkspace } from "@/components/resume-workspace";
+import VCTycoon from "@/components/vc-tycoon/VCTycoon";
 
-export default function Home() {
-  return <ResumeWorkspace />;
+export default function Page() {
+  return <VCTycoon />;
 }
