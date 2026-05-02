@@ -205,7 +205,25 @@ a { color: inherit; text-decoration: none; }
 }
 .textarea:focus, .input:focus { outline: none; border-color: var(--text-1); }
 .textarea::placeholder, .input::placeholder { color: var(--text-3); }
-.textarea-large { min-height: 280px; border: 0; background: transparent; padding: 24px 28px; }
+.textarea-large {
+  /* CSS class selectors don't inherit from .textarea (different class name),
+     so width/font/etc. must be set here explicitly. Without width:100% the
+     element falls back to the browser default (~20 cols), making JD entry
+     unusable on /start. */
+  display: block;
+  width: 100%;
+  min-height: 280px;
+  border: 0;
+  background: transparent;
+  padding: 24px 28px;
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.7;
+  resize: vertical;
+}
+.textarea-large:focus { outline: none; }
+.textarea-large::placeholder { color: var(--text-3); }
 
 /* ── Interview question (the soul of the product) ───────────────────────── */
 .q-display {

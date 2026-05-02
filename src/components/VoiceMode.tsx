@@ -106,16 +106,36 @@ export function VoiceMode({ open, initialMessages, jd, initialPhase, initialTurn
   const speakAndThen = useCallback(
     (text: string, after: () => void) => {
       setAiCaption(text);
+      setState("speaking");
+
+      // Hard safety net: even if both TTS engines silently fail to fire onEnd,
+      // advance to listening after an upper-bound based on text length so the
+      // orb never gets stuck. ~250ms per Chinese char + 4s pad, capped at 60s.
+      const maxMs = Math.min(60000, 4000 + text.length * 250);
+      let advanced = false;
+      const advance = () => {
+        if (advanced) return;
+        advanced = true;
+        if (aliveRef.current) after();
+      };
+      const safetyTimer = setTimeout(advance, maxMs);
+
       if (!tts.supported) {
-        setState("speaking");
-        // No TTS available — give the caption a comfortable read time then advance
+        // No TTS at all — show caption for a reasonable read time then advance
+        const readMs = Math.min(8000, 1000 + text.length * 100);
         setTimeout(() => {
-          if (aliveRef.current) after();
-        }, Math.min(4500, 800 + text.length * 80));
+          clearTimeout(safetyTimer);
+          advance();
+        }, readMs);
         return;
       }
-      setState("speaking");
-      tts.speak(text, { onEnd: () => { if (aliveRef.current) after(); } });
+
+      tts.speak(text, {
+        onEnd: () => {
+          clearTimeout(safetyTimer);
+          advance();
+        },
+      });
     },
     [tts],
   );
