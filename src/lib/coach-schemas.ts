@@ -75,20 +75,23 @@ export const coachRequestSchema = z.discriminatedUnion("action", [
     stories: z.array(storyCardSchema),
   }),
   z.object({
-    action: z.literal("extract-story"),
-    answer: z.string().min(1),
-    stories: z.array(storyCardSchema),
-    jobAnalysis: jobAnalysisSchema.nullable(),
-  }),
-  z.object({
-    action: z.literal("next-question"),
-    stories: z.array(storyCardSchema),
-    jobAnalysis: jobAnalysisSchema.nullable(),
-  }),
-  z.object({
     action: z.literal("generate-resume"),
     stories: z.array(storyCardSchema),
     jobAnalysis: jobAnalysisSchema.nullable(),
     baseResume: resumeDataSchema,
   }),
 ]);
+
+const chatMessageSchema = z.object({
+  id: z.string(),
+  role: z.enum(["assistant", "user", "system"]),
+  content: z.string(),
+  createdAt: z.string(),
+});
+
+export const chatRequestSchema = z.object({
+  mode: z.enum(["text", "voice"]),
+  history: z.array(chatMessageSchema).min(1),
+  jobAnalysis: jobAnalysisSchema.nullable(),
+  stories: z.array(storyCardSchema),
+});
