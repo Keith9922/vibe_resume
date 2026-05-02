@@ -85,16 +85,35 @@ export type AppState = {
   resume: ResumeData;
 };
 
-export type CoachAction = "analyze-jd" | "extract-story" | "next-question" | "generate-resume";
+export type CoachAction = "analyze-jd" | "generate-resume";
 
 export type CoachRequest =
   | { action: "analyze-jd"; jdText: string; stories: StoryCard[] }
-  | { action: "extract-story"; answer: string; stories: StoryCard[]; jobAnalysis: JobAnalysis | null }
-  | { action: "next-question"; stories: StoryCard[]; jobAnalysis: JobAnalysis | null }
   | { action: "generate-resume"; stories: StoryCard[]; jobAnalysis: JobAnalysis | null; baseResume: ResumeData };
 
 export type CoachResponse =
   | { action: "analyze-jd"; analysis: JobAnalysis; message: string; usedAI: boolean }
-  | { action: "extract-story"; stories: StoryCard[]; message: string; nextQuestion: string; usedAI: boolean }
-  | { action: "next-question"; question: string; usedAI: boolean }
   | { action: "generate-resume"; resume: ResumeData; message: string; usedAI: boolean };
+
+// ── Streaming chat ──────────────────────────────────────────────────────────
+//
+// /api/coach/chat is the conversational endpoint. It streams the AI's natural
+// reply back as text chunks (豆包-style), then sends one final meta event with
+// any silently-extracted story card. Stories are accumulated internally and
+// used for resume generation; the user never confirms cards.
+
+export type ChatMode = "text" | "voice";
+
+export type ChatRequest = {
+  mode: ChatMode;
+  history: ChatMessage[];
+  jobAnalysis: JobAnalysis | null;
+  stories: StoryCard[];
+};
+
+/** SSE events sent by /api/coach/chat */
+export type ChatStreamEvent =
+  | { type: "chunk"; text: string }
+  | { type: "meta"; story: StoryCard | null; usedAI: boolean }
+  | { type: "done" }
+  | { type: "error"; message: string };

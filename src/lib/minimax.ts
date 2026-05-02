@@ -1,4 +1,13 @@
-import type { CoachRequest, CoachResponse } from "@/lib/types";
+import type {
+  ChatMessage,
+  ChatMode,
+  CoachRequest,
+  CoachResponse,
+  JobAnalysis,
+  StoryCard,
+} from "@/lib/types";
+import { JSON_TASK_PROMPT, CHAT_PROMPT_TEXT, CHAT_PROMPT_VOICE, STORY_EXTRACTOR_PROMPT } from "@/lib/coach-prompts";
+import { createId, nowIso } from "@/lib/ids";
 
 type MiniMaxMessage = { role: "system" | "user" | "assistant"; content: string };
 type MiniMaxResponse = { choices?: { message?: { content?: string } }[] };
@@ -15,13 +24,19 @@ function getConfig() {
   };
 }
 
-// ── Chat completions ──────────────────────────────────────────────────────
+// ── Legacy JSON actions (analyze-jd, generate-resume) ────────────────────
 
 export async function runMiniMaxCoach(request: CoachRequest, fallback: CoachResponse): Promise<CoachResponse> {
   const { apiKey, baseUrl, model } = getConfig();
   if (!apiKey) return fallback;
 
-  const messages = buildMessages(request, fallback);
+  const messages: MiniMaxMessage[] = [
+    { role: "system", content: JSON_TASK_PROMPT },
+    {
+      role: "user",
+      content: JSON.stringify({ task: request.action, input: request, referenceOutputShape: fallback }, null, 2),
+    },
+  ];
 
   let response: Response;
   try {
@@ -54,17 +69,171 @@ export async function runMiniMaxCoach(request: CoachRequest, fallback: CoachResp
   }
 }
 
+// ── Streaming chat ────────────────────────────────────────────────────────
+//
+// The MiniMax API is OpenAI-compatible; setting `stream: true` returns SSE
+// chunks of the form `data: { choices: [{ delta: { content: "..." }}]}`.
+//
+// We expose an async iterator of text deltas. If the API key is missing or
+// the request fails, we yield no chunks and the caller will use its
+// pre-prepared fallback text instead.
+
+export async function* streamMiniMaxChat(
+  history: ChatMessage[],
+  jobAnalysis: JobAnalysis | null,
+  mode: ChatMode,
+): AsyncGenerator<string> {
+  const { apiKey, baseUrl, model } = getConfig();
+  if (!apiKey) return;
+
+  const systemPrompt = mode === "voice" ? CHAT_PROMPT_VOICE : CHAT_PROMPT_TEXT;
+  const jdContext = jobAnalysis
+    ? `\n\n# 当前 JD 信息（用于内化追问方向，不要直接复述）\n岗位：${jobAnalysis.title}\n关键能力：${jobAnalysis.keywords.join("、") || "（未识别）"}\n弱覆盖/缺失：${jobAnalysis.requirements.filter((r) => r.coverage !== "covered").map((r) => r.label).join("、") || "（无）"}`
+    : "";
+
+  const messages: MiniMaxMessage[] = [
+    { role: "system", content: systemPrompt + jdContext },
+    ...history.map<MiniMaxMessage>((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.content,
+    })),
+  ];
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.7,
+        max_tokens: mode === "voice" ? 200 : 600,
+        stream: true,
+      }),
+    });
+  } catch (err) {
+    console.error("MiniMax stream network error:", err);
+    return;
+  }
+
+  if (!response.ok || !response.body) {
+    const detail = await response.text().catch(() => "");
+    console.error("MiniMax stream failed:", response.status, redactSecrets(detail));
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE: lines separated by \n, blocks by \n\n
+    let nlIdx;
+    while ((nlIdx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nlIdx).trim();
+      buffer = buffer.slice(nlIdx + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (payload === "[DONE]") return;
+      try {
+        const parsed = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) yield delta;
+      } catch {
+        // ignore parse errors on partial chunks
+      }
+    }
+  }
+}
+
+// ── Silent story extractor (runs after streaming reply) ────────────────────
+
+type ExtractedStoryShape = {
+  story: {
+    title?: string;
+    context?: string;
+    role?: string;
+    actions?: string[];
+    result?: string;
+    skills?: string[];
+    metrics?: string[];
+  } | null;
+};
+
+export async function extractStoryWithMiniMax(userMessage: string): Promise<StoryCard | null> {
+  const { apiKey, baseUrl, model } = getConfig();
+  if (!apiKey) return null;
+  if (!userMessage.trim()) return null;
+
+  const messages: MiniMaxMessage[] = [
+    { role: "system", content: STORY_EXTRACTOR_PROMPT },
+    { role: "user", content: userMessage },
+  ];
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, temperature: 0.1, max_tokens: 800 }),
+    });
+  } catch (err) {
+    console.error("MiniMax extract network error:", err);
+    return null;
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    console.error("MiniMax extract failed:", response.status, redactSecrets(detail));
+    return null;
+  }
+
+  const payload = (await response.json()) as MiniMaxResponse;
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) return null;
+
+  try {
+    const parsed = parseJsonObject(content) as ExtractedStoryShape;
+    if (!parsed.story) return null;
+    const s = parsed.story;
+    if (!s.actions?.length && !s.result?.trim()) return null;
+
+    return {
+      id: createId("story"),
+      title: s.title?.trim() || "未命名经历",
+      context: s.context?.trim() || "",
+      role: s.role?.trim() || "",
+      actions: (s.actions ?? []).filter(Boolean),
+      result: s.result?.trim() || "",
+      evidence: (s.metrics ?? []).filter(Boolean).map((value) => ({
+        id: createId("ev"),
+        label: "数据",
+        value,
+        strength: "medium" as const,
+      })),
+      skills: (s.skills ?? []).filter(Boolean),
+      followUps: [],
+      status: "confirmed",
+      sourceQuote: userMessage,
+      createdAt: nowIso(),
+    };
+  } catch (error) {
+    console.error("MiniMax extract parse failed:", error);
+    return null;
+  }
+}
+
 // ── Speech to text ────────────────────────────────────────────────────────
 
-/**
- * Transcribe an audio blob using MiniMax's speech-to-text API.
- * Falls back gracefully if not configured or the API is unavailable.
- */
 export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string): Promise<string | null> {
   const { apiKey, baseUrl } = getConfig();
   if (!apiKey) return null;
 
-  // Determine file extension from mime type
   const ext = mimeType.includes("webm") ? "webm"
     : mimeType.includes("mp4") ? "mp4"
     : mimeType.includes("ogg") ? "ogg"
@@ -103,43 +272,6 @@ export async function transcribeAudio(audioBuffer: ArrayBuffer, mimeType: string
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────
-
-const SYSTEM_PROMPT = `你是 Stori 的 AI 简历教练，专注于帮助中国求职者把真实经历变成出色简历。
-
-## 核心原则
-- 只输出纯 JSON，不输出 Markdown、代码块标记（如 \`\`\`json）或任何解释文字
-- 绝对不编造经历、数字、公司名、学历、奖项——用户没说过的一律追问或标为"待补充"
-- 追问要具体：追问背景是什么、你负责什么（不是"参与"）、做了哪几个具体动作、结果是什么、有没有数字证明
-- 拒绝"负责过""参与过""协助过"这类模糊表达，追问到具体行动和结果
-- 输出 JSON 结构必须与参考 JSON 完全同形，只替换内容，不增删字段
-
-## 对于不同任务的要求
-
-**analyze-jd（分析 JD）**
-- 从 JD 中识别硬技能、软技能、领域经验、职责描述
-- 将隐含要求也提取出来（比如"推动落地"暗示跨团队协作能力）
-- message 要具体说识别了哪些关键能力，哪些可能是高优先项
-
-**extract-story（提取故事卡）**
-- 从用户描述中提取 STAR 结构：背景(Situation)、角色(Task)、行动(Action)、结果(Result)
-- 证据要找数字、用户反馈、上线结果、排名、对比数据
-- followUps 要针对性追问最缺失的信息，优先追问结果和数字
-- nextQuestion 要让用户感觉被真正倾听，不是机械问卷
-
-**generate-resume（生成简历）**
-- summary 要面向目标岗位，突出与 JD 最匹配的 2-3 个核心能力
-- bullets 每条要有"动作+结果"结构，能量化的必须量化
-- 没有足够确认素材的字段用"待补充"或省略，绝不凭空生成`;
-
-function buildMessages(request: CoachRequest, fallback: CoachResponse): MiniMaxMessage[] {
-  return [
-    { role: "system", content: SYSTEM_PROMPT },
-    {
-      role: "user",
-      content: JSON.stringify({ task: request.action, input: request, referenceOutputShape: fallback }, null, 2),
-    },
-  ];
-}
 
 function parseJsonObject(value: string): unknown {
   const first = value.indexOf("{");
