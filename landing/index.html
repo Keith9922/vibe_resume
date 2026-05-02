@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stori · 讲好你的故事，拿到心仪的 Offer</title>
+  <meta name="description" content="Stori 是一位耐心的 AI 简历教练。通过自然对话引导你把模糊的经历，变成清晰、量化、有说服力的简历素材——一次只问一件事，五分钟整理一段经历。" />
+  <meta name="theme-color" content="#F3EBE2" />
+  <meta property="og:title" content="Stori · 讲好你的故事" />
+  <meta property="og:description" content="对话式 AI 简历教练。一次只问一件事，五分钟整理一段经历。" />
+  <meta property="og:type" content="website" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://images.unsplash.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300..700;1,300..700&family=Inter:wght@300..700&family=Noto+Serif+SC:wght@300..700&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* Surfaces */
+      --bg: #F3EBE2;
+      --bg-dark: #2A1F18;
+      --surface: #FAF5EF;
+      --surface-2: #EFE6DB;
+      --paper: #F8EFE3;
+
+      /* Text */
+      --text-1: #1A1A1A;
+      --text-2: #3D3D3D;
+      --text-3: #7A6F62;
+      --text-inverse: #FAF5EF;
+
+      /* Accents — warm earth */
+      --accent: #D4916E;
+      --accent-dark: #A8694A;
+      --accent-light: #F0D5C2;
+      --terra: #C97C5C;
+      --olive: #8B8C5A;
+      --moss: #5C7A5C;
+      --ink: #2A1F18;
+
+      /* Borders */
+      --border: #C5BEB6;
+      --border-strong: #7A6F62;
+      --border-subtle: #DCD2C5;
+
+      /* Type */
+      --font-serif: 'Newsreader', 'Noto Serif SC', 'Songti SC', Georgia, serif;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+
+      /* Layout */
+      --gutter: clamp(20px, 5vw, 80px);
+      --max-w: 1200px;
+      --nav-h: 76px;
+
+      /* Motion */
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--bg);
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text-1);
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Animated mesh-gradient background ─────────────────────────────── */
+    .bg-mesh {
+      position: fixed;
+      inset: -10%;
+      z-index: -2;
+      filter: blur(80px) saturate(1.2);
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    .bg-mesh::before,
+    .bg-mesh::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      mix-blend-mode: multiply;
+    }
+
+    .bg-mesh::before {
+      width: 60vw; height: 60vw;
+      background: radial-gradient(circle, var(--accent-light) 0%, transparent 60%);
+      top: -10%; left: -10%;
+      animation: drift1 24s ease-in-out infinite;
+    }
+
+    .bg-mesh::after {
+      width: 50vw; height: 50vw;
+      background: radial-gradient(circle, #E8C9B0 0%, transparent 60%);
+      bottom: -20%; right: -10%;
+      animation: drift2 30s ease-in-out infinite;
+    }
+
+    .bg-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(60px) saturate(1.1);
+      pointer-events: none;
+      z-index: -2;
+      mix-blend-mode: multiply;
+      opacity: 0.5;
+    }
+
+    .bg-orb-1 {
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, var(--accent) 0%, transparent 65%);
+      top: 30%; right: 10%;
+      animation: drift3 28s ease-in-out infinite;
+    }
+
+    .bg-orb-2 {
+      width: 350px; height: 350px;
+      background: radial-gradient(circle, #B5C4A1 0%, transparent 65%);
+      bottom: 10%; left: 5%;
+      animation: drift4 35s ease-in-out infinite;
+    }
+
+    @keyframes drift1 {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      33% { transform: translate(15vw, 10vh) scale(1.15); }
+      66% { transform: translate(-5vw, 20vh) scale(0.9); }
+    }
+    @keyframes drift2 {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      50% { transform: translate(-20vw, -15vh) scale(1.2); }
+    }
+    @keyframes drift3 {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      40% { transform: translate(-10vw, 8vh) scale(1.1); }
+      80% { transform: translate(5vw, -10vh) scale(0.95); }
+    }
+    @keyframes drift4 {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      50% { transform: translate(15vw, -10vh) scale(1.15); }
+    }
+
+    /* Paper grain */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.4 0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: -1;
+      mix-blend-mode: multiply;
+    }
+
+    /* ── Navigation ──────────────────────────────────────────────────── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--gutter);
+      height: var(--nav-h);
+      background: rgba(243, 235, 226, 0.7);
+      backdrop-filter: blur(16px) saturate(1.4);
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.3s, background 0.3s;
+    }
+
+    nav.scrolled {
+      border-bottom-color: var(--border);
+      background: rgba(243, 235, 226, 0.9);
+    }
+
+    .nav-logo {
+      font-family: var(--font-serif);
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .nav-logo .dot {
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      display: inline-block;
+      margin-bottom: 2px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .nav-link {
+      color: var(--text-2);
+      text-decoration: none;
+      font-size: 0.92rem;
+      font-weight: 500;
+      transition: color 0.2s;
+      position: relative;
+    }
+
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      left: 0; bottom: -4px;
+      width: 0; height: 1.5px;
+      background: var(--accent);
+      transition: width 0.3s var(--ease-out);
+    }
+
+    .nav-link:hover { color: var(--ink); }
+    .nav-link:hover::after { width: 100%; }
+
+    .nav-cta {
+      padding: 10px 22px;
+      background: var(--ink);
+      color: var(--text-inverse);
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.3s var(--ease-out);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .nav-cta::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--accent);
+      transform: translateY(100%);
+      transition: transform 0.3s var(--ease-out);
+    }
+
+    .nav-cta span {
+      position: relative;
+      z-index: 1;
+    }
+
+    .nav-cta:hover::before { transform: translateY(0); }
+
+    /* ── Hero ───────────────────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      padding: calc(var(--nav-h) + 60px) var(--gutter) 80px;
+      min-height: 92vh;
+      display: grid;
+      grid-template-columns: 1fr 0.85fr;
+      gap: 80px;
+      align-items: center;
+      max-width: var(--max-w);
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-3);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow::before {
+      content: '';
+      width: 32px;
+      height: 1px;
+      background: var(--text-3);
+    }
+
+    .display {
+      font-family: var(--font-serif);
+      font-size: clamp(2.8rem, 6.5vw, 5.5rem);
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      line-height: 1.05;
+      color: var(--ink);
+      margin-bottom: 32px;
+    }
+
+    .display .highlight {
+      font-style: italic;
+      color: var(--accent-dark);
+      position: relative;
+      display: inline-block;
+    }
+
+    .display .highlight::after {
+      content: '';
+      position: absolute;
+      left: -2%; right: -2%;
+      bottom: 6px;
+      height: 30%;
+      background: var(--accent-light);
+      z-index: -1;
+      transform: scaleX(0);
+      transform-origin: left;
+      animation: highlight 1.4s 1.2s var(--ease-out) forwards;
+    }
+
+    @keyframes highlight {
+      to { transform: scaleX(1); }
+    }
+
+    .lead {
+      font-size: 1.125rem;
+      color: var(--text-2);
+      max-width: 480px;
+      line-height: 1.75;
+      margin-bottom: 40px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: all 0.3s var(--ease-out);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary {
+      padding: 18px 36px;
+      background: var(--ink);
+      color: var(--text-inverse);
+      border-radius: 4px;
+      font-size: 1rem;
+      box-shadow: 0 4px 24px rgba(42, 31, 24, 0.15);
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+      transform: translateY(101%);
+      transition: transform 0.4s var(--ease-out);
+    }
+
+    .btn-primary span {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(212, 145, 110, 0.4);
+    }
+
+    .btn-primary:hover::before { transform: translateY(0); }
+
+    .btn-primary .arrow {
+      transition: transform 0.3s var(--ease-spring);
+    }
+
+    .btn-primary:hover .arrow { transform: translateX(4px); }
+
+    .btn-text {
+      padding: 18px 8px;
+      color: var(--text-1);
+      font-size: 1rem;
+      background: transparent;
+    }
+
+    .btn-text .arrow {
+      transition: transform 0.3s var(--ease-out);
+    }
+
+    .btn-text:hover .arrow { transform: translateX(6px); }
+
+    /* Hero photo (right side) */
+    .hero-photo {
+      position: relative;
+      aspect-ratio: 4 / 5;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow:
+        0 30px 60px -20px rgba(42, 31, 24, 0.25),
+        0 18px 36px -18px rgba(42, 31, 24, 0.15);
+      background:
+        linear-gradient(135deg, rgba(212, 145, 110, 0.15) 0%, rgba(168, 105, 74, 0.05) 100%),
+        url("https://images.unsplash.com/photo-1455390582262-044cdead277a?w=900&q=80&auto=format&fit=crop") center/cover;
+      opacity: 0;
+      filter: blur(8px);
+      transform: translate(0, 0);
+      transition: transform 0.5s var(--ease-out);
+      animation: photoIn 1.2s 0.3s var(--ease-out) forwards;
+    }
+
+    @keyframes photoIn {
+      to { opacity: 1; filter: blur(0); }
+    }
+
+    .hero-photo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent 50%, rgba(42, 31, 24, 0.18) 100%);
+    }
+
+    .hero-photo .caption {
+      position: absolute;
+      bottom: 28px; left: 28px;
+      color: var(--text-inverse);
+      z-index: 1;
+    }
+
+    .hero-photo .caption .who {
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      font-style: italic;
+      font-weight: 400;
+      margin-bottom: 4px;
+    }
+
+    .hero-photo .caption .what {
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      opacity: 0.8;
+    }
+
+    /* Floating ornamental dots near photo */
+    .ornament {
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .ornament-1 {
+      top: -30px; right: -30px;
+      width: 100px; height: 100px;
+      border: 1.5px solid var(--accent);
+      border-radius: 50%;
+      animation: spin 40s linear infinite;
+    }
+
+    .ornament-1::after {
+      content: '';
+      position: absolute;
+      top: -4px; left: 50%;
+      width: 8px; height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      transform: translateX(-50%);
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .ornament-2 {
+      bottom: -40px; left: -40px;
+      font-family: var(--font-serif);
+      font-size: 7rem;
+      font-style: italic;
+      color: var(--accent);
+      opacity: 0.18;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    /* Hero meta strip */
+    .hero-strip {
+      position: absolute;
+      bottom: 24px;
+      left: var(--gutter); right: var(--gutter);
+      display: flex;
+      justify-content: space-around;
+      gap: 24px;
+      padding: 18px 32px;
+      background: rgba(250, 245, 239, 0.7);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      max-width: var(--max-w);
+      margin: 0 auto;
+      flex-wrap: wrap;
+    }
+
+    .hero-strip span {
+      font-size: 0.825rem;
+      color: var(--text-3);
+      letter-spacing: 0.05em;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hero-strip span::before {
+      content: '';
+      width: 4px; height: 4px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+
+    /* ── Sections ───────────────────────────────────────────────────── */
+    section.block {
+      padding: clamp(80px, 12vw, 140px) var(--gutter);
+      position: relative;
+    }
+
+    .container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+    }
+
+    .section-head {
+      max-width: 720px;
+      margin-bottom: 80px;
+    }
+
+    .section-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      color: var(--accent-dark);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    .section-eyebrow::before {
+      content: '✦';
+      font-size: 0.9rem;
+    }
+
+    .section-title {
+      font-family: var(--font-serif);
+      font-size: clamp(2rem, 4.5vw, 3.5rem);
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      color: var(--ink);
+      margin-bottom: 20px;
+    }
+
+    .section-title em {
+      color: var(--accent-dark);
+      font-style: italic;
+    }
+
+    .section-sub {
+      font-size: 1.05rem;
+      color: var(--text-2);
+      line-height: 1.75;
+      max-width: 560px;
+    }
+
+    /* ── How it works ───────────────────────────────────────────────── */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0;
+      position: relative;
+    }
+
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 80px; left: 5%;
+      width: 0;
+      height: 1px;
+      background: repeating-linear-gradient(90deg, var(--border) 0 6px, transparent 6px 12px);
+      z-index: 0;
+      transition: width 1.4s var(--ease-out);
+    }
+
+    .steps.in::before {
+      width: 90%;
+    }
+
+    .step {
+      position: relative;
+      padding: 40px 28px 32px;
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      transition: all 0.5s var(--ease-out);
+      z-index: 1;
+    }
+
+    .step + .step { border-left: none; }
+
+    .step:hover {
+      background: var(--paper);
+      transform: translateY(-6px);
+      box-shadow: 0 20px 40px -20px rgba(42, 31, 24, 0.2);
+      z-index: 2;
+    }
+
+    .step-num {
+      font-family: var(--font-serif);
+      font-size: 3rem;
+      font-style: italic;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 20px;
+      font-weight: 500;
+    }
+
+    .step h3 {
+      font-family: var(--font-serif);
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    .step p {
+      font-size: 0.92rem;
+      color: var(--text-2);
+      line-height: 1.65;
+    }
+
+    .step-icon {
+      position: absolute;
+      top: 36px; right: 28px;
+      width: 32px; height: 32px;
+      color: var(--accent);
+      opacity: 0;
+      transform: translateY(-4px);
+      transition: all 0.4s var(--ease-out);
+    }
+
+    .step:hover .step-icon {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Features bento ─────────────────────────────────────────────── */
+    .bento {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      grid-auto-rows: minmax(220px, auto);
+      gap: 16px;
+    }
+
+    .bento-card {
+      padding: 32px;
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      transition: all 0.5s var(--ease-out);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .bento-card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px -20px rgba(42, 31, 24, 0.18);
+    }
+
+    .b-1 { grid-column: span 4; grid-row: span 2; }
+    .b-2 { grid-column: span 2; }
+    .b-3 { grid-column: span 2; }
+    .b-4 { grid-column: span 2; }
+    .b-5 { grid-column: span 2; }
+    .b-6 { grid-column: span 2; }
+
+    .bento-card h3 {
+      font-family: var(--font-serif);
+      font-size: 1.3rem;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    .bento-card p {
+      font-size: 0.9rem;
+      color: var(--text-2);
+      line-height: 1.65;
+    }
+
+    .bento-icon {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: var(--accent-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+      color: var(--accent-dark);
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 1.4rem;
+      font-weight: 500;
+      transition: transform 0.4s var(--ease-spring);
+    }
+
+    .bento-card:hover .bento-icon {
+      transform: rotate(-8deg) scale(1.05);
+    }
+
+    /* Featured big card mock conversation */
+    .b-1 {
+      background: linear-gradient(160deg, var(--surface) 0%, var(--paper) 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .demo-chat {
+      background: var(--paper);
+      border: 1px dashed var(--border);
+      border-radius: 4px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    .chat-line {
+      display: flex;
+      gap: 10px;
+      font-size: 0.875rem;
+      align-items: flex-start;
+    }
+
+    .chat-line .who {
+      flex-shrink: 0;
+      font-family: var(--font-serif);
+      font-style: italic;
+      color: var(--accent-dark);
+      width: 56px;
+    }
+
+    .chat-line.user .who { color: var(--text-3); }
+
+    .chat-line .what {
+      color: var(--text-1);
+      line-height: 1.6;
+      flex: 1;
+    }
+
+    .chat-line.user .what { color: var(--text-2); }
+
+    .chat-line .what strong {
+      background: var(--accent-light);
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-weight: 500;
+    }
+
+    /* ── Comparison ─────────────────────────────────────────────────── */
+    .compare {
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .compare-row {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr 1fr;
+      border-bottom: 1px solid var(--border-subtle);
+      transition: background 0.3s;
+    }
+
+    .compare-row:last-child { border-bottom: none; }
+
+    .compare-row.head {
+      background: var(--surface-2);
+      font-weight: 600;
+    }
+
+    .compare-row > div {
+      padding: 22px 24px;
+      font-size: 0.92rem;
+      color: var(--text-2);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+    }
+
+    .compare-row > div:last-child { border-right: none; }
+
+    .compare-row > div:first-child {
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    .compare-stori {
+      background: rgba(212, 145, 110, 0.08);
+      color: var(--accent-dark) !important;
+      font-weight: 600;
+    }
+
+    .compare-row:hover { background: var(--paper); }
+
+    .compare-mark.yes { color: var(--moss); }
+    .compare-mark.no { color: var(--accent-dark); opacity: 0.7; }
+    .compare-mark.partial { color: var(--olive); }
+
+    /* ── Quote ──────────────────────────────────────────────────────── */
+    .quote-block {
+      max-width: 920px;
+      margin: 0 auto;
+      text-align: center;
+      position: relative;
+    }
+
+    .quote-block::before {
+      content: '“';
+      font-family: var(--font-serif);
+      font-size: 12rem;
+      font-style: italic;
+      color: var(--accent);
+      opacity: 0.18;
+      position: absolute;
+      top: -60px; left: -10px;
+      line-height: 1;
+      transform-origin: top left;
+      animation: quote-breathe 5.5s ease-in-out infinite;
+    }
+
+    @keyframes quote-breathe {
+      0%, 100% { transform: scale(1); opacity: 0.18; }
+      50% { transform: scale(1.06); opacity: 0.24; }
+    }
+
+    .quote-text {
+      font-family: var(--font-serif);
+      font-size: clamp(1.4rem, 3vw, 2.2rem);
+      font-weight: 400;
+      color: var(--ink);
+      line-height: 1.4;
+      letter-spacing: -0.01em;
+      margin-bottom: 32px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .quote-text em { color: var(--accent-dark); }
+
+    .quote-author {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-3);
+      font-size: 0.9rem;
+    }
+
+    .quote-author .name {
+      font-family: var(--font-serif);
+      font-style: italic;
+      color: var(--ink);
+      font-size: 1rem;
+    }
+
+    .quote-author .sep { width: 2px; height: 2px; background: var(--text-3); border-radius: 50%; }
+
+    /* ── Stats ──────────────────────────────────────────────────────── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat {
+      padding: 36px 24px;
+      border-right: 1px solid var(--border-subtle);
+      text-align: center;
+    }
+
+    .stat:last-child { border-right: none; }
+
+    .stat-num {
+      font-family: var(--font-serif);
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+      line-height: 1;
+      margin-bottom: 10px;
+      font-style: italic;
+    }
+
+    .stat-num em { color: var(--accent-dark); font-style: normal; }
+
+    .stat-label {
+      font-size: 0.82rem;
+      color: var(--text-3);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── CTA section ───────────────────────────────────────────────── */
+    .cta-block {
+      text-align: center;
+      padding: clamp(80px, 12vw, 140px) var(--gutter);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-block .container { position: relative; z-index: 1; }
+
+    .cta-deco {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0.08;
+    }
+
+    .cta-deco-1 {
+      top: 50%; left: 5%;
+      transform: translateY(-50%);
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 14rem;
+      color: var(--accent);
+      line-height: 0.8;
+    }
+
+    .cta-deco-2 {
+      bottom: -40px; right: 5%;
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 12rem;
+      color: var(--accent);
+      line-height: 0.8;
+    }
+
+    .cta-block .display {
+      max-width: 800px;
+      margin: 0 auto 24px;
+      font-size: clamp(2.4rem, 5vw, 4.2rem);
+    }
+
+    .cta-block .lead {
+      max-width: 540px;
+      margin: 0 auto 40px;
+    }
+
+    .cta-block .btn-primary {
+      padding: 22px 48px;
+      font-size: 1.05rem;
+    }
+
+    .cta-note {
+      margin-top: 18px;
+      font-size: 0.85rem;
+      color: var(--text-3);
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────── */
+    footer.bottom {
+      padding: 40px var(--gutter);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-logo {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .footer-meta {
+      font-size: 0.82rem;
+      color: var(--text-3);
+    }
+
+    /* ── Animations & utilities ─────────────────────────────────────── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
+    }
+
+    .reveal.in {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .reveal-stagger > * {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out);
+    }
+
+    .reveal-stagger.in > *,
+    .reveal-stagger > .in {
+      opacity: 1 !important;
+      transform: translateY(0) !important;
+    }
+
+    /* Word reveal animation for hero h1 */
+    .word {
+      display: inline-block;
+      opacity: 0;
+      transform: translateY(40px);
+      animation: wordIn 0.9s var(--ease-out) forwards;
+    }
+
+    @keyframes wordIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Scroll-progress bar */
+    .progress {
+      position: fixed;
+      top: 0; left: 0;
+      height: 2px;
+      width: 0;
+      background: linear-gradient(90deg, var(--accent), var(--accent-dark));
+      z-index: 200;
+      transition: width 0.1s linear;
+    }
+
+    /* Cursor follower */
+    .cursor-glow {
+      position: fixed;
+      width: 240px; height: 240px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(212, 145, 110, 0.18) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 99;
+      transform: translate(-50%, -50%);
+      mix-blend-mode: multiply;
+      transition: opacity 0.3s;
+      opacity: 0;
+    }
+
+    /* ── Mobile ─────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      :root { --nav-h: 60px; }
+      .hero {
+        grid-template-columns: 1fr;
+        gap: 40px;
+        padding-top: calc(var(--nav-h) + 32px);
+        min-height: auto;
+      }
+      .hero-photo { aspect-ratio: 5 / 4; }
+      .nav-links { gap: 16px; }
+      .nav-link { display: none; }
+      .bento { grid-template-columns: 1fr; }
+      .b-1, .b-2, .b-3, .b-4, .b-5, .b-6 { grid-column: span 1; grid-row: auto; }
+      .steps { grid-template-columns: 1fr 1fr; }
+      .steps::before { display: none; }
+      .compare-row { grid-template-columns: 1.2fr 1fr; }
+      .compare-row > div:nth-child(3),
+      .compare-row > div:nth-child(4) { display: none; }
+      .hero-strip { position: relative; left: 0; right: 0; bottom: auto; margin-top: 32px; }
+      .ornament-1, .ornament-2 { display: none; }
+      .cursor-glow { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Background layers -->
+<div class="bg-mesh"></div>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+<div class="cursor-glow" id="cursorGlow"></div>
+<div class="progress" id="progress"></div>
+
+<!-- Nav -->
+<nav id="nav">
+  <a href="#" class="nav-logo">Stori<span class="dot"></span></a>
+  <div class="nav-links">
+    <a href="#how" class="nav-link">如何运作</a>
+    <a href="#features" class="nav-link">功能</a>
+    <a href="#voices" class="nav-link">用户故事</a>
+    <a href="#join" class="nav-link">参与内测</a>
+    <a href="#" class="nav-cta" data-app><span>开始使用 →</span></a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-content">
+    <span class="eyebrow">Where careers begin with stories</span>
+    <h1 class="display" id="heroTitle">
+      <span class="word" style="animation-delay:.1s">把你的</span><span class="word" style="animation-delay:.18s">经历，</span><br />
+      <span class="word" style="animation-delay:.32s">讲成</span><span class="word highlight" style="animation-delay:.42s">一个好故事</span><span class="word" style="animation-delay:.55s">。</span>
+    </h1>
+    <p class="lead reveal">
+      Stori 是一位耐心的 AI 简历教练。通过自然对话引导你把模糊的经历，
+      变成清晰、量化、有说服力的简历素材——一次只问一件事，五分钟整理一段经历。
+    </p>
+    <div class="hero-actions reveal">
+      <a href="#" class="btn btn-primary" data-app>
+        <span>开始整理我的故事 <span class="arrow">→</span></span>
+      </a>
+      <a href="#how" class="btn btn-text">了解工作流程 <span class="arrow">→</span></a>
+    </div>
+  </div>
+
+  <div class="hero-photo" role="img" aria-label="人在记录故事">
+    <div class="ornament ornament-1" aria-hidden="true"></div>
+    <div class="ornament ornament-2" aria-hidden="true">S</div>
+    <div class="caption">
+      <div class="who">"先讲一个让你印象最深的经历"</div>
+      <div class="what">— Stori AI 教练</div>
+    </div>
+  </div>
+</section>
+
+<div class="hero-strip reveal" style="margin-top:-40px">
+  <span>AI 引导对话</span>
+  <span>STAR 框架</span>
+  <span>语音输入</span>
+  <span>JD 智能匹配</span>
+  <span>一键导出 PDF</span>
+</div>
+
+<!-- Stats -->
+<section class="block" style="padding-top:80px;padding-bottom:0">
+  <div class="container stats reveal-stagger">
+    <div class="stat">
+      <div class="stat-num">5<em>分钟</em></div>
+      <div class="stat-label">整理一段经历</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">3<em>×</em></div>
+      <div class="stat-label">深度追问层级</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">0</div>
+      <div class="stat-label">编造的内容</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">100%</div>
+      <div class="stat-label">数据存在本地</div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how" class="block">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="section-eyebrow">工作流程</div>
+      <h2 class="section-title">从一段口述，到<em>一份简历</em></h2>
+      <p class="section-sub">
+        不需要你提前想好怎么写。打开 Stori，从一段你印象最深的经历开始讲——
+        AI 会像面试官一样追问，把你的故事整理成可信、可用的素材。
+      </p>
+    </div>
+
+    <div class="steps reveal-stagger">
+      <div class="step">
+        <div class="step-num">i</div>
+        <h3>讲一段经历</h3>
+        <p>用最自然的方式，说出一段项目、实习或社团经历。可以打字，也可以用语音。</p>
+        <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      </div>
+      <div class="step">
+        <div class="step-num">ii</div>
+        <h3>AI 主动追问</h3>
+        <p>背景是什么？你具体做了什么？结果是什么？有数据吗？AI 一次只问一件事。</p>
+        <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zm-9 5.25h.008v.008H12v-.008z"/></svg>
+      </div>
+      <div class="step">
+        <div class="step-num">iii</div>
+        <h3>故事卡确认</h3>
+        <p>每段经历整理为 STAR 结构的故事卡，所有事实由你确认。AI 绝不编造。</p>
+        <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      </div>
+      <div class="step">
+        <div class="step-num">iv</div>
+        <h3>按 JD 生成简历</h3>
+        <p>粘贴目标岗位 JD，AI 优先用匹配的故事卡生成简历，可一键导出 PDF。</p>
+        <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features bento -->
+<section id="features" class="block">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="section-eyebrow">为什么是 Stori</div>
+      <h2 class="section-title">不是 AI 帮你<em>编</em>，<br />是 AI 帮你<em>挖</em>。</h2>
+      <p class="section-sub">
+        市面上的简历工具大多让你填表或让 AI 直接写。Stori 走第三条路——
+        通过对话挖出你忽略的真实亮点，把每一段经历变成你能为之负责的素材。
+      </p>
+    </div>
+
+    <div class="bento reveal-stagger">
+      <div class="bento-card b-1">
+        <div>
+          <div class="bento-icon">Q</div>
+          <h3>追问到底，挖出量化结果</h3>
+          <p>"参与过""协助过"这类模糊表达，AI 会追问到具体数字、对比、用户反馈。每一条素材都站得住脚。</p>
+        </div>
+        <div class="demo-chat">
+          <div class="chat-line user">
+            <span class="who">我</span>
+            <span class="what">我做过一个二手交易小程序，转化率涨了不少。</span>
+          </div>
+          <div class="chat-line">
+            <span class="who">Stori</span>
+            <span class="what">"涨了不少"具体是多少？比如 <strong>从 X% 到 Y%</strong>？这次优化是你独立判断，还是有数据支撑？</span>
+          </div>
+          <div class="chat-line user">
+            <span class="who">我</span>
+            <span class="what">从 18% 到 31%，我访谈了 12 个同学才发现流程问题。</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bento-card b-2">
+        <div class="bento-icon">!</div>
+        <h3>真实性保障</h3>
+        <p>不编造经历、数字、公司名或学历。所有写入简历的内容必须经过你的确认。</p>
+      </div>
+
+      <div class="bento-card b-3">
+        <div class="bento-icon">JD</div>
+        <h3>JD 智能匹配</h3>
+        <p>粘贴岗位 JD，自动分析覆盖 / 弱覆盖 / 缺口，针对性追问补强证据。</p>
+      </div>
+
+      <div class="bento-card b-4">
+        <div class="bento-icon">𝓥</div>
+        <h3>语音对话采集</h3>
+        <p>支持浏览器原生语音识别 + MiniMax ASR，对着手机说话就能完成。</p>
+      </div>
+
+      <div class="bento-card b-5">
+        <div class="bento-icon">★</div>
+        <h3>STAR 结构化</h3>
+        <p>每段经历自动整理为 Situation-Task-Action-Result 卡片，结构清晰。</p>
+      </div>
+
+      <div class="bento-card b-6">
+        <div class="bento-icon">⌘</div>
+        <h3>本地优先</h3>
+        <p>数据全程存在你的浏览器里。无需注册账号，关掉页面前别忘了导出。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Quote -->
+<section class="block">
+  <div class="container quote-block reveal">
+    <p class="quote-text">
+      "我以前每次写简历都不知道从哪下手。<br />
+      Stori 就像给我找了一个<em>耐心的面试官</em>，<br />
+      追问完一轮，我才发现自己有这么多可以写的东西。"
+    </p>
+    <div class="quote-author">
+      <span class="name">张同学</span>
+      <span class="sep"></span>
+      <span>计算机大四 · 秋招产品岗 Offer 已签</span>
+    </div>
+  </div>
+</section>
+
+<!-- Comparison -->
+<section class="block">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="section-eyebrow">对比</div>
+      <h2 class="section-title">和其他方式<em>比一比</em></h2>
+    </div>
+
+    <div class="compare reveal">
+      <div class="compare-row head">
+        <div>维度</div>
+        <div class="compare-stori">Stori</div>
+        <div>自己写</div>
+        <div>直接让 GPT 写</div>
+      </div>
+      <div class="compare-row">
+        <div>内容真实性</div>
+        <div class="compare-stori"><span class="compare-mark yes">●</span>&nbsp;只写确认素材</div>
+        <div><span class="compare-mark yes">●</span>&nbsp;由你决定</div>
+        <div><span class="compare-mark no">○</span>&nbsp;容易编造</div>
+      </div>
+      <div class="compare-row">
+        <div>经历挖掘深度</div>
+        <div class="compare-stori"><span class="compare-mark yes">●</span>&nbsp;AI 主动追问</div>
+        <div><span class="compare-mark no">○</span>&nbsp;靠回忆</div>
+        <div><span class="compare-mark partial">◐</span>&nbsp;依赖输入</div>
+      </div>
+      <div class="compare-row">
+        <div>JD 定制匹配</div>
+        <div class="compare-stori"><span class="compare-mark yes">●</span>&nbsp;自动分析</div>
+        <div><span class="compare-mark no">○</span>&nbsp;手动对比</div>
+        <div><span class="compare-mark partial">◐</span>&nbsp;反复提示</div>
+      </div>
+      <div class="compare-row">
+        <div>给不会写的人</div>
+        <div class="compare-stori"><span class="compare-mark yes">●</span>&nbsp;对话即可</div>
+        <div><span class="compare-mark no">○</span>&nbsp;有门槛</div>
+        <div><span class="compare-mark partial">◐</span>&nbsp;表达需清晰</div>
+      </div>
+      <div class="compare-row">
+        <div>使用成本</div>
+        <div class="compare-stori"><span class="compare-mark yes">●</span>&nbsp;免费开始</div>
+        <div><span class="compare-mark yes">●</span>&nbsp;免费</div>
+        <div><span class="compare-mark partial">◐</span>&nbsp;需订阅</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Voices -->
+<section id="voices" class="block">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="section-eyebrow">用户故事</div>
+      <h2 class="section-title">他们这样讲述<em>自己的故事</em></h2>
+    </div>
+
+    <div class="bento reveal-stagger" style="grid-auto-rows:auto">
+      <div class="bento-card b-2" style="grid-column:span 3">
+        <p style="font-family:var(--font-serif);font-size:1.15rem;line-height:1.6;color:var(--ink);font-style:italic;margin-bottom:24px">
+          "把 JD 粘进去之后，Stori 直接告诉我哪里覆盖不足，追问了我两轮——
+          简历内容比之前充实了一倍。"
+        </p>
+        <div style="display:flex;align-items:center;gap:12px;font-size:0.85rem;color:var(--text-3)">
+          <span style="font-family:var(--font-serif);color:var(--ink);font-size:0.95rem">李同学</span>
+          <span>·</span>
+          <span>工商管理研一 · 互联网运营</span>
+        </div>
+      </div>
+
+      <div class="bento-card b-3" style="grid-column:span 3">
+        <p style="font-family:var(--font-serif);font-size:1.15rem;line-height:1.6;color:var(--ink);font-style:italic;margin-bottom:24px">
+          "通勤路上对着手机说话，AI 就把碎片整理成故事卡，
+          回家再确认细节就好——比一个人对着空白页发呆好太多。"
+        </p>
+        <div style="display:flex;align-items:center;gap:12px;font-size:0.85rem;color:var(--text-3)">
+          <span style="font-family:var(--font-serif);color:var(--ink);font-size:0.95rem">王同学</span>
+          <span>·</span>
+          <span>机械硕士 · 转行数据分析</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Early access form -->
+<section id="join" class="block" style="padding-top:40px">
+  <div class="container">
+    <div class="join-wrap">
+      <div class="join-text">
+        <div class="section-eyebrow">参与早期内测</div>
+        <h2 class="section-title">告诉我们<em>你的想法</em>，<br />我们会优先邀请你试用。</h2>
+        <p class="section-sub" style="margin-bottom:32px">
+          Stori 还在打磨中——如果你想第一时间用上，或者有想法影响产品方向，
+          花一分钟填一份小问卷，我们会优先把入口发给你。
+        </p>
+        <ul class="join-list">
+          <li><span class="dot">●</span>4 道选择题 + 2 道简答题，1 分钟搞定</li>
+          <li><span class="dot">●</span>提交后会收到我们的邮件邀请</li>
+          <li><span class="dot">●</span>你的反馈会直接影响我们要做什么、怎么收费</li>
+        </ul>
+        <div class="join-actions">
+          <a
+            href="https://my.feishu.cn/share/base/shrcnOsPxnMxlWIzNhPEvyZBySd"
+            class="btn btn-primary"
+            id="formCta"
+            target="_blank"
+            rel="noopener"
+          >
+            <span>填写问卷（约 1 分钟）<span class="arrow">→</span></span>
+          </a>
+        </div>
+        <p class="join-note">
+          ※ 问卷托管在飞书 Base，需用飞书账号一键登录（确保我们能联系到你）
+        </p>
+      </div>
+      <div class="join-qr">
+        <div class="qr-card">
+          <div class="qr-img" id="qrImg" aria-label="问卷二维码">
+            <img
+              src="https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=2&color=2A1F18&bgcolor=FAF5EF&data=https%3A%2F%2Fmy.feishu.cn%2Fshare%2Fbase%2FshrcnOsPxnMxlWIzNhPEvyZBySd"
+              alt="Stori 调研问卷二维码"
+              loading="lazy"
+            />
+          </div>
+          <div class="qr-caption">
+            <div class="qr-title">扫码也能填</div>
+            <div class="qr-sub">手机飞书 / 微信扫一扫</div>
+          </div>
+        </div>
+        <div class="qr-tag">早期内测</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .join-wrap {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 80px;
+    align-items: center;
+    padding: 48px 56px;
+    background: linear-gradient(135deg, var(--surface) 0%, var(--paper) 100%);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .join-wrap::before {
+    content: '';
+    position: absolute;
+    top: -100px; right: -120px;
+    width: 360px; height: 360px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(212, 145, 110, 0.15) 0%, transparent 70%);
+    filter: blur(20px);
+  }
+
+  .join-text { position: relative; z-index: 1; }
+  .join-text .section-title { font-size: clamp(1.6rem, 3vw, 2.4rem); margin-bottom: 16px; }
+
+  .join-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 36px 0;
+  }
+  .join-list li {
+    font-size: 0.95rem;
+    color: var(--text-2);
+    padding: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .join-list .dot {
+    color: var(--accent);
+    font-size: 0.6rem;
+  }
+
+  .join-note {
+    margin-top: 14px;
+    font-size: 0.78rem;
+    color: var(--text-3);
+    letter-spacing: 0.02em;
+    line-height: 1.6;
+  }
+
+  .join-qr {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .qr-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 24px;
+    box-shadow: 0 20px 40px -16px rgba(42, 31, 24, 0.18);
+    transform: rotate(-2deg);
+    transition: transform 0.4s var(--ease-spring);
+  }
+
+  .qr-card:hover { transform: rotate(0deg) translateY(-4px); }
+
+  .qr-img {
+    width: 200px;
+    height: 200px;
+    background: var(--paper);
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  .qr-img img { width: 100%; height: 100%; object-fit: contain; }
+
+  .qr-placeholder {
+    font-size: 0.85rem;
+    color: var(--text-3);
+    font-family: var(--font-serif);
+    font-style: italic;
+  }
+
+  .qr-caption { text-align: center; }
+  .qr-title {
+    font-family: var(--font-serif);
+    font-size: 0.95rem;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .qr-sub {
+    font-size: 0.78rem;
+    color: var(--text-3);
+  }
+
+  .qr-tag {
+    margin-top: -8px;
+    margin-right: -160px;
+    align-self: flex-end;
+    background: var(--accent-dark);
+    color: var(--text-inverse);
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    transform: rotate(8deg);
+    box-shadow: 0 4px 12px rgba(168, 105, 74, 0.3);
+  }
+
+  @media (max-width: 900px) {
+    .join-wrap {
+      grid-template-columns: 1fr;
+      gap: 40px;
+      padding: 32px 24px;
+    }
+    .qr-tag { margin-right: 0; align-self: center; }
+  }
+</style>
+
+<!-- CTA -->
+<section class="cta-block">
+  <div class="cta-deco cta-deco-1">S</div>
+  <div class="cta-deco cta-deco-2">.</div>
+  <div class="container reveal">
+    <div class="section-eyebrow" style="justify-content:center">现在就开始</div>
+    <h2 class="display">
+      你的经历值得被<br /><em style="font-style:italic;color:var(--accent-dark)">好好讲出来</em>。
+    </h2>
+    <p class="lead">
+      不用提前准备稿子，从一段你印象最深的经历开始就好。
+    </p>
+    <a href="#" class="btn btn-primary" data-app>
+      <span>免费开始使用 Stori <span class="arrow">→</span></span>
+    </a>
+    <p class="cta-note">无需注册 · 数据存在本地 · 由 MiniMax M2.7 驱动</p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="bottom">
+  <div class="footer-logo">Stori<span style="color:var(--accent)">·</span></div>
+  <div class="footer-meta">Powered by MiniMax M2.7 · 让每一段经历都有机会被看见</div>
+</footer>
+
+<script>
+  // Scroll progress bar
+  const progress = document.getElementById('progress');
+  const nav = document.getElementById('nav');
+  let ticking = false;
+
+  function onScroll() {
+    if (ticking) return;
+    requestAnimationFrame(() => {
+      const h = document.documentElement;
+      const total = h.scrollHeight - h.clientHeight;
+      const pct = (h.scrollTop / total) * 100;
+      progress.style.width = pct + '%';
+      if (h.scrollTop > 24) nav.classList.add('scrolled');
+      else nav.classList.remove('scrolled');
+      ticking = false;
+    });
+    ticking = true;
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // Reveal-on-scroll. For .reveal-stagger, individually stagger the kids.
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        const t = e.target;
+        t.classList.add('in');
+        if (t.classList.contains('reveal-stagger')) {
+          Array.from(t.children).forEach((kid, i) => {
+            setTimeout(() => kid.classList.add('in'), i * 90);
+          });
+        }
+        io.unobserve(t);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.reveal, .reveal-stagger').forEach(el => io.observe(el));
+
+  // Failsafe: anything still hidden after 4s gets shown.
+  setTimeout(() => {
+    document.querySelectorAll('.reveal:not(.in)').forEach(el => el.classList.add('in'));
+    document.querySelectorAll('.reveal-stagger').forEach(el => {
+      el.classList.add('in');
+      Array.from(el.children).forEach(kid => kid.classList.add('in'));
+    });
+  }, 4000);
+
+  // Cursor glow follower (desktop only)
+  const cursorGlow = document.getElementById('cursorGlow');
+  if (window.matchMedia('(pointer: fine)').matches) {
+    document.addEventListener('mousemove', (e) => {
+      cursorGlow.style.opacity = '1';
+      cursorGlow.style.left = e.clientX + 'px';
+      cursorGlow.style.top = e.clientY + 'px';
+    });
+    document.addEventListener('mouseleave', () => {
+      cursorGlow.style.opacity = '0';
+    });
+  }
+
+  // CTA — link to main app
+  const APP_URL = 'https://optimistic-nobel-82972e.vercel.app';
+  document.querySelectorAll('[data-app]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.open(APP_URL, '_blank');
+    });
+  });
+
+  // Subtle parallax on hero photo — only on devices with fine pointers (mouse).
+  // Move the photo at most 6px each axis based on cursor distance from hero center.
+  const heroSection = document.querySelector('.hero');
+  const heroPhoto = document.querySelector('.hero-photo');
+  if (heroSection && heroPhoto && window.matchMedia('(pointer: fine)').matches) {
+    let raf = 0;
+    const onMove = (e) => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const r = heroSection.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) return;
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const dx = Math.max(-0.5, Math.min(0.5, (e.clientX - cx) / r.width));
+        const dy = Math.max(-0.5, Math.min(0.5, (e.clientY - cy) / r.height));
+        heroPhoto.style.transform = `translate(${dx * 12}px, ${dy * 12}px)`;
+      });
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+  }
+
+  // Magnetic effect on primary buttons
+  document.querySelectorAll('.btn-primary').forEach(btn => {
+    btn.addEventListener('mousemove', (e) => {
+      const rect = btn.getBoundingClientRect();
+      const dx = e.clientX - rect.left - rect.width / 2;
+      const dy = e.clientY - rect.top - rect.height / 2;
+      btn.style.transform = `translate(${dx * 0.15}px, ${dy * 0.15 - 2}px)`;
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.transform = '';
+    });
+  });
+
+  // Stat number count-up
+  const statObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        const text = el.textContent;
+        const match = text.match(/^(\d+)/);
+        if (match) {
+          const target = parseInt(match[1], 10);
+          const suffix = text.slice(match[1].length);
+          let cur = 0;
+          const step = Math.max(1, Math.ceil(target / 30));
+          const tick = () => {
+            cur = Math.min(target, cur + step);
+            el.innerHTML = cur + suffix.replace(/<em>([^<]+)<\/em>/, '<em>$1</em>');
+            if (cur < target) requestAnimationFrame(tick);
+          };
+          tick();
+          statObserver.unobserve(el);
+        }
+      }
+    });
+  }, { threshold: 0.5 });
+
+  document.querySelectorAll('.stat-num').forEach(el => {
+    // preserve <em> structure
+    const innerHTML = el.innerHTML;
+    el.dataset.original = innerHTML;
+    statObserver.observe(el);
+  });
+</script>
+
+</body>
+</html>

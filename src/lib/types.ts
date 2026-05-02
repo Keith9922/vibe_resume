@@ -1,43 +1,44 @@
-export type SkillCoverageStatus = "covered" | "weak" | "missing";
-export type StoryStatus = "draft" | "confirmed" | "needs-info";
-export type ChatRole = "assistant" | "user" | "system";
+// ─── Interview ────────────────────────────────────────────────────────────────
 
-export type ChatMessage = {
+export type InterviewPhase =
+  | "intro"          // 1-2 turns: background, target role
+  | "topic-select"   // 1 turn: pick the experience to talk about
+  | "deep-dive"      // 4-6 turns: STAR excavation
+  | "closing"        // 1 turn: anything to add?
+  | "done";          // interview complete, ready to synthesize
+
+export type InterviewMessage = {
   id: string;
-  role: ChatRole;
+  role: "user" | "assistant";
   content: string;
   createdAt: string;
 };
 
-export type EvidenceItem = {
-  id: string;
-  label: string;
-  value: string;
-  strength: "strong" | "medium" | "weak";
-};
+// ─── Story Cards ──────────────────────────────────────────────────────────────
+
+export type StoryStatus = "draft" | "confirmed" | "needs-info";
 
 export type StoryCard = {
   id: string;
   title: string;
-  context: string;
-  role: string;
-  actions: string[];
-  result: string;
-  evidence: EvidenceItem[];
+  context: string;     // Situation
+  role: string;        // Task
+  actions: string[];   // Action bullets
+  result: string;      // Result
   skills: string[];
-  followUps: string[];
+  followUps: string[]; // what to ask next
   status: StoryStatus;
   sourceQuote: string;
   createdAt: string;
 };
+
+// ─── Job Description ──────────────────────────────────────────────────────────
 
 export type JobRequirement = {
   id: string;
   label: string;
   category: "hard-skill" | "soft-skill" | "domain" | "experience" | "responsibility";
   priority: "must" | "should" | "nice";
-  coverage: SkillCoverageStatus;
-  evidenceStoryIds: string[];
 };
 
 export type JobAnalysis = {
@@ -48,9 +49,10 @@ export type JobAnalysis = {
   summary: string;
   keywords: string[];
   requirements: JobRequirement[];
-  followUpQuestions: string[];
   updatedAt: string;
 };
+
+// ─── Resume ───────────────────────────────────────────────────────────────────
 
 export type ResumeExperience = {
   id: string;
@@ -77,24 +79,69 @@ export type ResumeData = {
   updatedAt: string;
 };
 
+// ─── App State ────────────────────────────────────────────────────────────────
+
+export const SCHEMA_VERSION = 2 as const;
+
 export type AppState = {
-  schemaVersion: 1;
-  messages: ChatMessage[];
-  stories: StoryCard[];
+  schemaVersion: typeof SCHEMA_VERSION;
+  // Step 1 – JD (optional)
+  jd: string | null;
   jobAnalysis: JobAnalysis | null;
-  resume: ResumeData;
+  // Step 2 – Interview
+  messages: InterviewMessage[];
+  phase: InterviewPhase;
+  turnCount: number;
+  // Step 3 – Results
+  stories: StoryCard[];
+  resume: ResumeData | null;
 };
 
+// ─── API contracts ────────────────────────────────────────────────────────────
+
+export type InterviewRequest = {
+  action: "interview";
+  messages: { role: "user" | "assistant"; content: string }[];
+  jd: string | null;
+  phase: InterviewPhase;
+  turnCount: number;
+};
+
+export type InterviewApiResponse = {
+  action: "interview";
+  message: string;
+  phase: InterviewPhase;
+  usedAI: boolean;
+};
+
+export type SynthesizeRequest = {
+  action: "synthesize";
+  messages: { role: "user" | "assistant"; content: string }[];
+  jd: string | null;
+};
+
+export type SynthesizeResponse = {
+  action: "synthesize";
+  stories: StoryCard[];
+  message: string;
+  usedAI: boolean;
+};
+
+export type GenerateResumeRequest = {
+  action: "generate-resume";
+  stories: StoryCard[];
+  jd: string | null;
+  baseResume?: Partial<ResumeData>;
+};
+
+export type GenerateResumeResponse = {
+  action: "generate-resume";
+  resume: ResumeData;
+  message: string;
+  usedAI: boolean;
+};
+
+// Keep backward-compat types for existing engine utilities
 export type CoachAction = "analyze-jd" | "extract-story" | "next-question" | "generate-resume";
-
-export type CoachRequest =
-  | { action: "analyze-jd"; jdText: string; stories: StoryCard[] }
-  | { action: "extract-story"; answer: string; stories: StoryCard[]; jobAnalysis: JobAnalysis | null }
-  | { action: "next-question"; stories: StoryCard[]; jobAnalysis: JobAnalysis | null }
-  | { action: "generate-resume"; stories: StoryCard[]; jobAnalysis: JobAnalysis | null; baseResume: ResumeData };
-
-export type CoachResponse =
-  | { action: "analyze-jd"; analysis: JobAnalysis; message: string; usedAI: boolean }
-  | { action: "extract-story"; stories: StoryCard[]; message: string; nextQuestion: string; usedAI: boolean }
-  | { action: "next-question"; question: string; usedAI: boolean }
-  | { action: "generate-resume"; resume: ResumeData; message: string; usedAI: boolean };
+export type ChatRole = "assistant" | "user" | "system";
+export type ChatMessage = { id: string; role: ChatRole; content: string; createdAt: string };

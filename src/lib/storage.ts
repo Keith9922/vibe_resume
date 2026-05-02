@@ -1,27 +1,69 @@
-import type { AppState } from "@/lib/types";
-import { createInitialState } from "@/lib/initial-state";
+import type { AppState, ResumeData } from "@/lib/types";
+import { SCHEMA_VERSION } from "@/lib/types";
 
-const STORAGE_KEY = "stori-state-v1";
+const STORAGE_KEY = "stori-state-v2";
+
+export const DEFAULT_RESUME: ResumeData = {
+  name: "",
+  headline: "",
+  location: "",
+  email: "",
+  phone: "",
+  links: [],
+  summary: "",
+  skills: [],
+  experiences: [],
+  education: [],
+  notes: [],
+  targetRole: "",
+  updatedAt: new Date().toISOString(),
+};
+
+export const DEFAULT_STATE: AppState = {
+  schemaVersion: SCHEMA_VERSION,
+  jd: null,
+  jobAnalysis: null,
+  messages: [],
+  phase: "intro",
+  turnCount: 0,
+  stories: [],
+  resume: null,
+};
 
 export function loadState(): AppState {
-  if (typeof window === "undefined") return createInitialState();
-  const value = window.localStorage.getItem(STORAGE_KEY);
-  if (!value) return createInitialState();
+  if (typeof window === "undefined") return { ...DEFAULT_STATE };
   try {
-    const parsed = JSON.parse(value) as AppState;
-    if (parsed.schemaVersion !== 1) return createInitialState();
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_STATE };
+    const parsed = JSON.parse(raw) as AppState;
+    if (!parsed.schemaVersion || parsed.schemaVersion < SCHEMA_VERSION) {
+      return { ...DEFAULT_STATE };
+    }
     return parsed;
   } catch {
-    return createInitialState();
+    return { ...DEFAULT_STATE };
   }
 }
 
 export function saveState(state: AppState): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage full or unavailable
+  }
 }
 
-export function clearState(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(STORAGE_KEY);
+export function resetState(): AppState {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+  return { ...DEFAULT_STATE };
+}
+
+export function patchState(patch: Partial<AppState>): AppState {
+  const current = loadState();
+  const next = { ...current, ...patch };
+  saveState(next);
+  return next;
 }
