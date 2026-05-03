@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { StarSidebar } from "@/components/StarSidebar";
 import { VoiceInput } from "@/components/VoiceInput";
 import { VoiceMode } from "@/components/VoiceMode";
+import { PreflightModal } from "@/components/voice/PreflightModal";
 import type { InterviewApiResponse, InterviewMessage, InterviewPhase } from "@/lib/types";
 import { loadState, patchState } from "@/lib/storage";
 import { generateId } from "@/lib/ids";
@@ -32,6 +33,7 @@ export default function InterviewPage() {
   const [synthesizing, setSynthesizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Hydrate from localStorage and ask for the very first question if needed.
@@ -197,7 +199,7 @@ export default function InterviewPage() {
         <button
           type="button"
           className="btn btn-ghost btn-sm voice-launch-btn"
-          onClick={() => setVoiceOpen(true)}
+          onClick={() => setPreflightOpen(true)}
           title="改用语音对话"
           aria-label="打开语音对话模式"
         >
@@ -287,6 +289,12 @@ export default function InterviewPage() {
         <StarSidebar phase={phase} turnCount={turnCount} messages={messages} />
       </div>
 
+      <PreflightModal
+        open={preflightOpen}
+        onCancel={() => setPreflightOpen(false)}
+        onProceed={() => { setPreflightOpen(false); setVoiceOpen(true); }}
+      />
+
       <VoiceMode
         open={voiceOpen}
         initialMessages={messages}
@@ -295,6 +303,7 @@ export default function InterviewPage() {
         initialTurnCount={turnCount}
         onClose={() => setVoiceOpen(false)}
         onTurnComplete={handleVoiceTurn}
+        onSynthesizeNow={synthesize}
       />
     </div>
   );

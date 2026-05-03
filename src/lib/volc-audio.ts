@@ -15,14 +15,28 @@ export type CapturedChunk = Int16Array; // 320 samples = 20ms @ 16k
 export type AudioCapture = {
   start: () => Promise<void>;
   stop: () => void;
+  /** Pause forwarding PCM chunks (keep stream + worklet alive for fast resume). */
+  pause: () => void;
+  resume: () => void;
   isActive: () => boolean;
+  isPaused: () => boolean;
 };
 
-export function createAudioCapture(onChunk: (chunk: CapturedChunk) => void): AudioCapture {
+export type CaptureCallbacks = {
+  /** 320-sample Int16 PCM @ 16k. Suppressed while paused. */
+  onChunk: (chunk: CapturedChunk) => void;
+  /** Throttled mic level (RMS) ~16fps. Always emitted, even when paused. */
+  onLevel?: (rms: number) => void;
+};
+
+type WorkletMsg = { kind: "pcm"; buffer: ArrayBuffer } | { kind: "level"; rms: number };
+
+export function createAudioCapture(callbacks: CaptureCallbacks): AudioCapture {
   let context: AudioContext | null = null;
   let stream: MediaStream | null = null;
   let source: MediaStreamAudioSourceNode | null = null;
   let worklet: AudioWorkletNode | null = null;
+  let paused = false;
 
   return {
     async start() {
@@ -35,16 +49,20 @@ export function createAudioCapture(onChunk: (chunk: CapturedChunk) => void): Aud
           autoGainControl: true,
         },
       });
-      // The AudioContext often defaults to 48000 Hz; the worklet handles downsampling.
       context = new AudioContext();
       await context.audioWorklet.addModule("/audio-worklet/pcm-encoder.js");
       source = context.createMediaStreamSource(stream);
       worklet = new AudioWorkletNode(context, "pcm-encoder");
-      worklet.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-        onChunk(new Int16Array(e.data));
+      worklet.port.onmessage = (e: MessageEvent<WorkletMsg>) => {
+        const msg = e.data;
+        if (!msg) return;
+        if (msg.kind === "level") {
+          callbacks.onLevel?.(msg.rms);
+        } else if (msg.kind === "pcm" && !paused) {
+          callbacks.onChunk(new Int16Array(msg.buffer));
+        }
       };
       source.connect(worklet);
-      // Don't connect worklet to destination — we don't want to hear ourselves.
     },
 
     stop() {
@@ -54,9 +72,13 @@ export function createAudioCapture(onChunk: (chunk: CapturedChunk) => void): Aud
       try { stream?.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
       try { context?.close(); } catch { /* ignore */ }
       worklet = null; source = null; stream = null; context = null;
+      paused = false;
     },
 
+    pause() { paused = true; },
+    resume() { paused = false; },
     isActive() { return !!context; },
+    isPaused() { return paused; },
   };
 }
 

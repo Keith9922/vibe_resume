@@ -9,6 +9,7 @@
 
 const TARGET_RATE = 16_000;
 const CHUNK_SAMPLES = 320; // 20ms @ 16k
+const LEVEL_INTERVAL_MS = 60; // emit a level reading roughly every 60ms (~16fps)
 
 class PcmEncoderProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -17,6 +18,10 @@ class PcmEncoderProcessor extends AudioWorkletProcessor {
     this.ratio = this.inputRate / TARGET_RATE;
     this.acc = []; // pending downsampled Float32 samples (queue)
     this.fractional = 0;  // fractional index for naive linear resampling
+    // RMS level accumulator — emitted on a timer to throttle main-thread cost
+    this.levelSumSq = 0;
+    this.levelCount = 0;
+    this.lastLevelEmit = 0;
   }
 
   process(inputs) {
@@ -24,6 +29,12 @@ class PcmEncoderProcessor extends AudioWorkletProcessor {
     if (!input || input.length === 0) return true;
     const channel = input[0]; // mono — first channel only
     if (!channel || channel.length === 0) return true;
+
+    // Accumulate RMS over the raw input (not downsampled, keeps level honest)
+    for (let k = 0; k < channel.length; k++) {
+      this.levelSumSq += channel[k] * channel[k];
+    }
+    this.levelCount += channel.length;
 
     // Naive linear-interpolation downsample. Good enough for speech.
     let i = this.fractional;
@@ -37,6 +48,17 @@ class PcmEncoderProcessor extends AudioWorkletProcessor {
     }
     this.fractional = i - channel.length;
 
+    // Throttled RMS emission (~16fps). Posts a primitive Number, no copy cost.
+    const now = currentTime * 1000;
+    if (now - this.lastLevelEmit >= LEVEL_INTERVAL_MS && this.levelCount > 0) {
+      const rms = Math.sqrt(this.levelSumSq / this.levelCount);
+      this.levelSumSq = 0;
+      this.levelCount = 0;
+      this.lastLevelEmit = now;
+      // Discriminator: tag levels with "L" so capture hook can route separately from PCM chunks
+      this.port.postMessage({ kind: "level", rms });
+    }
+
     // Emit in 320-sample chunks
     while (this.acc.length >= CHUNK_SAMPLES) {
       const chunk = this.acc.splice(0, CHUNK_SAMPLES);
@@ -46,7 +68,7 @@ class PcmEncoderProcessor extends AudioWorkletProcessor {
         const s = Math.max(-1, Math.min(1, chunk[k]));
         i16[k] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
       }
-      this.port.postMessage(i16.buffer, [i16.buffer]);
+      this.port.postMessage({ kind: "pcm", buffer: i16.buffer }, [i16.buffer]);
     }
 
     return true; // keep alive

@@ -6,16 +6,18 @@
 // Token never leave this process.
 //
 // Frame protocol is byte-for-byte pass-through in both directions. We don't
-// parse the binary protocol — that's the client's job. We only:
-//   - require an origin from the allowlist (browser CORS-style enforcement)
-//   - inject the 4 auth headers + connect-id when opening upstream
-//   - close the pair atomically so neither side leaks
+// parse the binary protocol byte-for-byte for forwarding, but we DO peek at
+// JSON frames from the server to log transcripts (ASRResponse + ChatResponse)
+// so the synthesise pipeline can later turn the conversation into resume cards.
 //
 // systemd unit: stori-voice-relay.service (see RELAY_DEPLOY.md)
 
 import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
+import { mkdirSync, appendFileSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT) || 3003;
 const HOST = process.env.HOST || "127.0.0.1";
@@ -25,6 +27,10 @@ const VOLC_ACCESS_KEY = need("VOLC_ACCESS_KEY");
 const VOLC_RESOURCE_ID = process.env.VOLC_RESOURCE_ID || "volc.speech.dialog";
 const VOLC_APP_KEY = process.env.VOLC_APP_KEY || "PlgvMymc7f3tQnJ6";
 const VOLC_WSS_URL = process.env.VOLC_WSS_URL || "wss://openspeech.bytedance.com/api/v3/realtime/dialogue";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SESSIONS_DIR = process.env.SESSIONS_DIR || resolve(__dirname, "sessions");
+mkdirSync(SESSIONS_DIR, { recursive: true });
 
 // Origin allowlist — same shape as Chinese Name Lab. Add your prod + preview hostnames.
 const ALLOWED_ORIGIN_PATTERNS = [
@@ -45,14 +51,128 @@ function isOriginAllowed(origin) {
   return ALLOWED_ORIGIN_PATTERNS.some((re) => re.test(origin));
 }
 
-// ── HTTP server (just for /health + WS upgrade) ─────────────────────────
+// ── Transcript storage (one JSON-lines file per session) ────────────────
+//
+// Each line: {"ts": ms, "role": "user"|"assistant", "text": "..."}
+// 7-day retention auto-cleanup on every connect.
+
+function appendTranscript(sessionId, role, text) {
+  if (!sessionId || !text) return;
+  const safe = sessionId.replace(/[^a-zA-Z0-9-]/g, "");
+  if (!safe) return;
+  const line = JSON.stringify({ ts: Date.now(), role, text }) + "\n";
+  try {
+    appendFileSync(resolve(SESSIONS_DIR, safe + ".jsonl"), line, "utf8");
+  } catch (err) {
+    console.error(`[relay] transcript write failed:`, err.message);
+  }
+}
+
+function readTranscript(sessionId) {
+  const safe = sessionId.replace(/[^a-zA-Z0-9-]/g, "");
+  if (!safe) return null;
+  try {
+    const raw = readFileSync(resolve(SESSIONS_DIR, safe + ".jsonl"), "utf8");
+    return raw.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+function purgeOldSessions(maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+  try {
+    const cutoff = Date.now() - maxAgeMs;
+    for (const name of readdirSync(SESSIONS_DIR)) {
+      const p = resolve(SESSIONS_DIR, name);
+      try {
+        if (statSync(p).mtimeMs < cutoff) unlinkSync(p);
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+}
+
+// ── Frame inspection (peek at server JSON frames to extract transcript) ──
+//
+// We forward bytes verbatim; we ALSO try to decode the few JSON frames we
+// care about for the transcript log. Failures are silent — the user's audio
+// path is unaffected.
+
+const FLAG_EVENT = 0b0100;
+const SER_JSON = 0b0001;
+// volc event IDs we care about for transcript
+const EVT_ASR_RESPONSE = 451;
+const EVT_CHAT_RESPONSE = 550;
+const EVT_CHAT_ENDED = 559;
+const EVT_ASR_ENDED = 459;
+
+function tryExtractTranscriptEvent(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 8) return null;
+  const flags = buf[1] & 0xf;
+  const ser = (buf[2] >> 4) & 0xf;
+  if (!(flags & FLAG_EVENT) || ser !== SER_JSON) return null;
+  const eventId = buf.readUInt32BE(4);
+  if (eventId !== EVT_ASR_RESPONSE && eventId !== EVT_CHAT_RESPONSE
+      && eventId !== EVT_CHAT_ENDED && eventId !== EVT_ASR_ENDED) return null;
+
+  // Skip optional context_id field (most server frames have it)
+  let off = 8;
+  if (off + 4 <= buf.length) {
+    const idSize = buf.readUInt32BE(off);
+    if (idSize > 0 && idSize < 200 && off + 4 + idSize <= buf.length) {
+      off += 4 + idSize;
+    }
+  }
+  if (off + 4 > buf.length) return null;
+  const plSize = buf.readUInt32BE(off);
+  off += 4;
+  if (off + plSize > buf.length) return null;
+
+  try {
+    const text = buf.slice(off, off + plSize).toString("utf8");
+    return { eventId, payload: text ? JSON.parse(text) : {} };
+  } catch {
+    return null;
+  }
+}
+
+// ── HTTP (health + transcript fetch) ─────────────────────────────────────
 
 const httpServer = http.createServer((req, res) => {
-  if (req.url === "/health") {
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+  if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true, ts: new Date().toISOString() }));
     return;
   }
+
+  // GET /sessions/:id/transcript → JSON array of {ts, role, text}
+  const m = url.pathname.match(/^\/sessions\/([a-zA-Z0-9-]+)\/transcript$/);
+  if (m) {
+    const origin = req.headers.origin;
+    res.setHeader("Vary", "Origin");
+    if (origin && isOriginAllowed(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    if (req.method === "OPTIONS") {
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.writeHead(204).end();
+      return;
+    }
+    const transcript = readTranscript(m[1]);
+    if (transcript === null) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid sessionId" }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ sessionId: m[1], turns: transcript }));
+    return;
+  }
+
   res.writeHead(404).end();
 });
 
@@ -71,15 +191,19 @@ httpServer.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  wss.handleUpgrade(req, socket, head, (browser) => onConnection(browser, origin));
+  // The browser passes ?session=<uuid> so we know which file to write to
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const sessionId = url.searchParams.get("session") || randomUUID();
+  wss.handleUpgrade(req, socket, head, (browser) => onConnection(browser, origin, sessionId));
 });
 
 // ── Per-connection: open upstream + bidirectional binary pass-through ────
 
-function onConnection(browser, origin) {
+function onConnection(browser, origin, sessionId) {
   const connectId = randomUUID();
-  const tag = `[${connectId.slice(0, 8)}]`;
+  const tag = `[${connectId.slice(0, 8)} sess=${sessionId.slice(0, 8)}]`;
   console.log(`${tag} client connected from ${origin}`);
+  purgeOldSessions(); // best-effort, runs on every connect, cheap
 
   const upstream = new WebSocket(VOLC_WSS_URL, {
     headers: {
@@ -92,14 +216,16 @@ function onConnection(browser, origin) {
   });
 
   let upstreamReady = false;
-  const browserBuffer = []; // queue messages that arrived before upstream opened
+  const browserBuffer = [];
+  // Per-turn buffers — finalise to transcript on ASREnded/ChatEnded
+  let pendingUserText = "";
+  let pendingAiText = "";
 
   const closeBoth = (code = 1000, reason = "") => {
     try { browser.close(code, reason); } catch { /* ignore */ }
     try { upstream.close(code, reason); } catch { /* ignore */ }
   };
 
-  // Track logid for ops debugging
   upstream.on("upgrade", (res) => {
     const logid = res.headers["x-tt-logid"];
     if (logid) console.log(`${tag} upstream upgrade x-tt-logid=${logid}`);
@@ -125,12 +251,38 @@ function onConnection(browser, origin) {
   });
 
   upstream.on("message", (data, isBinary) => {
-    // Pass-through: server frames go straight to browser, binary stays binary
+    // Forward to browser first — never let logging delay the audio path
     try { browser.send(data, { binary: isBinary }); } catch { /* ignore */ }
+
+    // Best-effort transcript extraction (server JSON frames only)
+    if (!isBinary && Buffer.isBuffer(data)) {
+      const evt = tryExtractTranscriptEvent(data);
+      if (!evt) return;
+      try {
+        if (evt.eventId === EVT_ASR_RESPONSE) {
+          const r = evt.payload?.results?.[0];
+          if (r && !r.is_interim && r.text) pendingUserText += r.text;
+        } else if (evt.eventId === EVT_ASR_ENDED) {
+          if (pendingUserText.trim()) appendTranscript(sessionId, "user", pendingUserText.trim());
+          pendingUserText = "";
+        } else if (evt.eventId === EVT_CHAT_RESPONSE) {
+          const c = evt.payload?.content;
+          if (typeof c === "string") pendingAiText += c;
+        } else if (evt.eventId === EVT_CHAT_ENDED) {
+          if (pendingAiText.trim()) appendTranscript(sessionId, "assistant", pendingAiText.trim());
+          pendingAiText = "";
+        }
+      } catch (err) {
+        console.warn(`${tag} transcript extract:`, err.message);
+      }
+    }
   });
 
   upstream.on("close", (code, reason) => {
     console.log(`${tag} upstream closed code=${code} reason=${reason}`);
+    // Flush any remaining partial text (in case of abrupt close)
+    if (pendingUserText.trim()) appendTranscript(sessionId, "user", pendingUserText.trim());
+    if (pendingAiText.trim()) appendTranscript(sessionId, "assistant", pendingAiText.trim());
     closeBoth(code === 1006 ? 1011 : code, reason?.toString() || "");
   });
 
@@ -141,7 +293,6 @@ function onConnection(browser, origin) {
   });
 
   browser.on("message", (data, isBinary) => {
-    // Client → server: queue until upstream is open, then pass-through
     if (!upstreamReady) {
       browserBuffer.push(data);
       return;
@@ -174,9 +325,9 @@ httpServer.listen(PORT, HOST, () => {
   console.log(`[relay] listening on ws://${HOST}:${PORT}/voice (health: /health)`);
   console.log(`[relay] upstream: ${VOLC_WSS_URL}`);
   console.log(`[relay] AppID: ${VOLC_APP_ID}, Resource: ${VOLC_RESOURCE_ID}`);
+  console.log(`[relay] sessions dir: ${SESSIONS_DIR}`);
 });
 
-// Graceful shutdown
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, () => {
     console.log(`[relay] ${sig} received, shutting down`);
