@@ -587,6 +587,22 @@ a { color: inherit; text-decoration: none; }
 
 .voice-topbar-sep { color: rgba(250,245,239,0.35); }
 .voice-topbar-meta { color: rgba(250,245,239,0.7); font-size: 12px; }
+.voice-topbar-jd {
+  color: var(--accent-light);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  background: rgba(212,145,110,0.18);
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .voice-topbar-jd { max-width: 120px; font-size: 11px; }
+}
 
 .voice-topbar-progress {
   max-width: 240px;

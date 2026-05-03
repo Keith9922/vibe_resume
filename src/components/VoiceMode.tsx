@@ -166,6 +166,7 @@ export function VoiceMode({
         storyCount={progress.stories.length}
         completeness={progress.completeness}
         canSynthesize={progress.totalScore >= 6 || userTurnCount >= 4}
+        jdSnippet={jdSnippetForBadge(jd)}
         onSynthesize={handleSynthesize}
         onEnd={handleEnd}
       />
@@ -210,11 +211,12 @@ export function VoiceMode({
 // Sub-components
 // ──────────────────────────────────────────────────────────────────────────
 
-function TopBar({ callDurationMs, storyCount, completeness, canSynthesize, onSynthesize, onEnd }: {
+function TopBar({ callDurationMs, storyCount, completeness, canSynthesize, jdSnippet, onSynthesize, onEnd }: {
   callDurationMs: number;
   storyCount: number;
   completeness: number;
   canSynthesize: boolean;
+  jdSnippet: string | null;
   onSynthesize: () => void;
   onEnd: () => void;
 }) {
@@ -225,6 +227,12 @@ function TopBar({ callDurationMs, storyCount, completeness, canSynthesize, onSyn
         <span className="voice-topbar-timer">{fmtDuration(callDurationMs)}</span>
         <span className="voice-topbar-sep" aria-hidden>·</span>
         <span className="voice-topbar-meta">{storyCount} 段经历</span>
+        {jdSnippet && (
+          <>
+            <span className="voice-topbar-sep" aria-hidden>·</span>
+            <span className="voice-topbar-jd" title="Stori 已知道你的目标岗位">💼 {jdSnippet}</span>
+          </>
+        )}
       </div>
       <div className="voice-topbar-progress">
         <div className="voice-topbar-progress-bar">
@@ -507,6 +515,18 @@ function HistoryDrawer({ history, onClose }: {
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────
 
+function jdSnippetForBadge(jd: string | null): string | null {
+  if (!jd) return null;
+  // Prefer the first 岗位/职位/title-like substring; otherwise first non-blank line.
+  const flat = jd.replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  // Try to find "岗位：xxx" / "职位：xxx" / "Position: xxx" patterns
+  const m = flat.match(/(?:岗位|职位|应聘|Position|Title)[：:]\s*([^\n，,。；;]{2,30})/i);
+  if (m?.[1]) return m[1].trim();
+  // Else show first 24 chars (visually compact in the topbar)
+  return flat.length > 24 ? flat.slice(0, 24).trim() + "…" : flat;
+}
+
 function fmtDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
@@ -528,12 +548,34 @@ function buildSessionConfig(jd: string | null, initialMessages: InterviewMessage
     .map((m) => ({ role: m.role, text: m.content }));
 
   // Writer-not-interrogator prompt. Template literal to dodge JS quote-nesting hell.
-  const jdLine = jd
-    ? `   ta 的目标岗位（不要直接复读）：${jd.slice(0, 800)}`
-    : "   （ta 没提供目标岗位，保持通用方向）";
+  // JD is now front-loaded as a prominent section with EXPLICIT instructions to
+  // probe along its keyword axes. Previously the prompt said "悄悄的指南针" and
+  // "不要直接复读" — which the model over-interpreted as "ignore the JD".
+  const jdSection = jd
+    ? `# 用户的目标岗位（**核心上下文**）
+
+\`\`\`
+${jd.slice(0, 1500)}
+\`\`\`
+
+**你必须按这个 JD 的能力轴线去提问**——不是机械念 JD，而是：
+
+- 心里把 JD 拆成 3-5 个能力关键词（比如"用户增长"、"数据分析"、"跨团队推进"）
+- **每聊一段经历**，主动找跟这些关键词最相关的细节去追问
+- 用户说的事如果跟某个能力点对得上，**主动帮 ta 翻译成简历语言**：
+  『你说的这个排查流程，其实就是 JD 里要的"数据驱动决策"——HR 看到这种就来劲』
+- 前 3 轮内**至少有 1 次**主动用 JD 关键词引导话题，让用户感觉到你在为 ta 这个岗位定制
+- 但不要**整段照念 JD 原文**——只引用关键词
+
+如果用户聊的事完全跟 JD 无关，温和提示：『这个挺有意思的，不过你想投[岗位]的话，有没有更对口的经历可以聊？』`
+    : `# 没有目标岗位
+
+用户没提供 JD，保持通用方向。可以问 ta 想投什么类型的岗位，但不要催。`;
 
   const systemRole = `你是 Stori，一个温和、专注的简历写作助手。
 你和用户**坐在一起聊**——帮 ta 把零零碎碎做过的事，挖出可以写进简历的部分。
+
+${jdSection}
 
 # 你心里清楚的 3 件事
 
@@ -547,9 +589,7 @@ function buildSessionConfig(jd: string | null, initialMessages: InterviewMessage
    - 帮 ta 想起来：当时大概多少人、做了多久、有没有什么反馈
    - 用 ta 的语言，不是简历八股语
 
-3. JD 是悄悄的指南针，不是压在头上的标尺。听到沾边的事，主动帮 ta 翻译成简历语言：
-   『你说的这个排查流程，其实算是"数据驱动决策"——HR 看到这种就来劲。』
-${jdLine}
+3. **目标岗位是你的提问指南**——见上面 JD 段，按那个能力轴线主动引导。
 
 # 你怎么聊
 
@@ -562,6 +602,7 @@ ${jdLine}
 # 绝对不能
 × 上来就 KPI 式提问 × 让用户感到压力 × 编造没说过的公司/数字/职位
 × 用面试官腔（『请详细描述』）× 重复确认（『所以你的意思是...』）
+× 完全不提 JD（如果用户给了 JD，至少 1-2 次要明显能感受到你在为这个岗位定制）
 
 # 收尾
 等系统通过 SayHello 提示你『已经攒够』了，再温和提议帮 ta 整理。
@@ -577,7 +618,10 @@ ${jdLine}
       extra: {},
     },
     asr: {
-      extra: { end_smooth_window_ms: 800 },
+      // 2000ms gives space for mid-sentence thinking pauses. Voltunc's default
+      // is 1500ms; bumping further because writing-resume conversations have
+      // longer pauses than chitchat (people stop mid-sentence to recall details).
+      extra: { end_smooth_window_ms: 2000 },
     },
     dialog: {
       bot_name: "Stori",
